@@ -640,11 +640,11 @@
       <div class="space-y-3 mb-4">
         <div>
           <label class="text-xs text-slate-300 block mb-1">學號 (Student ID):</label>
-          <input type="text" id="laptop-student-id" placeholder="例如：112062114" class="w-full bg-slate-950 border border-purple-700 rounded px-3 py-2 text-xs text-purple-200 focus:outline-none focus:border-purple-400">
+          <input type="text" id="laptop-student-id" placeholder="例如：115031235" class="w-full bg-slate-950 border border-purple-700 rounded px-3 py-2 text-xs text-purple-200 focus:outline-none focus:border-purple-400">
         </div>
         <div>
           <label class="text-xs text-slate-300 block mb-1">密碼 (Password):</label>
-          <input type="password" id="laptop-password" placeholder="例如：19562200" class="w-full bg-slate-950 border border-purple-700 rounded px-3 py-2 text-xs text-purple-200 focus:outline-none focus:border-purple-400">
+          <input type="password" id="laptop-password" placeholder="例如：12345678" class="w-full bg-slate-950 border border-purple-700 rounded px-3 py-2 text-xs text-purple-200 focus:outline-none focus:border-purple-400">
         </div>
       </div>
 
@@ -713,7 +713,7 @@
       <div class="w-12 h-12 bg-purple-950 border border-purple-500/50 rounded-full mx-auto flex items-center justify-center text-2xl text-purple-300 mb-2">
         <i class="fa-solid fa-graduation-cap"></i>
       </div>
-      <h3 class="text-base font-bold text-purple-200 mb-2">《清大校史專書》</h3>
+      <h3 class="text-base font-bold text-purple-200 mb-2">《清大校史》</h3>
       
       <div class="bg-slate-950 p-4 rounded-lg border border-purple-900/60 text-xs text-slate-300 space-y-2 text-left leading-relaxed mb-4">
         <p>📖 國立清華大學於 <span class="text-amber-300 font-bold">1911</span> 年在北京建校。</p>
@@ -985,7 +985,7 @@
       colorBooksUnlocked: false,
 
       compassSeq: [],
-      correctCompassSeq: ['東', '南', '西', '北'],
+      correctCompassSeq: ['東', '北', '西', '南'],
       compassUnlocked: false,
 
       flashlightActive: false,
@@ -1014,21 +1014,21 @@
         name: '清華學生證',
         icon: 'fa-id-card',
         iconColor: 'text-purple-400',
-        description: '你的 NTHU 學生證，上面印著學號：112062114。可用於筆記型電腦 Portal 登入驗證。'
+        description: '你的 清大 學生證，上面印著學號：112062114。'
       },
       uv_flashlight: {
         id: 'uv_flashlight',
         name: 'UV 紫光手電筒',
-        icon: 'fa-bolt',
+        icon: '🔦',
         iconColor: 'text-amber-400',
-        description: '一支從抽屜找到的高亮度 UV 手電筒。可以在物品欄點擊開啟紫光模式，照射隱蔽牆面顯影。'
+        description: '一支從抽屜找到的高亮度 UV 手電筒。可以在物品欄點擊開啟紫光模式。'
       },
       library_map: {
         id: 'library_map',
         name: '圖書館館藏地圖',
         icon: 'fa-map-location-dot',
         iconColor: 'text-amber-300',
-        description: '特藏書架獲得的地圖，邊緣記載著方位標註：『梅園方位線索：東 ➔ 南 ➔ 西 ➔ 北』。'
+        description: '特藏書架獲得的地圖，邊緣記載著方位標註：『梅園方位線索：東 ➔ 北 ➔ 西 ➔ 南』。'
       },
       meichu_book: {
         id: 'meichu_book',
@@ -1332,9 +1332,9 @@
     function inspectDeskWall() {
       playSound('click');
       if (gameState.flashlightActive) {
-        addStoryLog("UV 紫光照亮前隔板，浮現螢光暗碼：<span class='text-amber-300 font-bold'>↑ ↓ ← →</span>（此為消防栓鎖密碼）");
+        addStoryLog("UV 紫光照亮前隔板，浮現螢光暗碼：<span class='text-amber-300 font-bold'>↑ ↓ ← →</span>");
       } else {
-        addStoryLog("這是一面普通的讀書桌正面隔板，好像需要特殊光源照射...（試試開啟 UV 紫光燈？）");
+        addStoryLog("這是一面普通的讀書桌正面隔板，好像需要特殊光源照射...）");
       }
     }
 
@@ -1362,7 +1362,7 @@
         addStoryLog("筆電登入成功！檢索出特藏區書脊順序：<span class='text-amber-300 font-bold'>藍 ➔ 黃 ➔ 綠 ➔ 紅</span>");
       } else {
         playSound('error');
-        addStoryLog(`登入失敗！請確認學號(112062114)與密碼(1956 + 當前館內時間 ${getFormattedInGameClockDigits()})。`);
+        addStoryLog(`登入失敗！請確認學號與密碼(清大復校年份 + 當前館內時間 ${getFormattedInGameClockDigits()})。`);
       }
     }
 
