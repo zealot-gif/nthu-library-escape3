@@ -1034,7 +1034,7 @@
       uv_flashlight: {
         id: 'uv_flashlight',
         name: 'UV 紫光手電筒',
-        icon: '🔦',
+        icon: 'fa-eye',
         iconColor: 'text-amber-400',
         description: '一支從抽屜找到的高亮度 UV 手電筒。可以在物品欄點擊開啟紫光模式。'
       },
@@ -1050,7 +1050,7 @@
         name: '《梅竹歷史特刊》',
         icon: 'fa-book-atlas',
         iconColor: 'text-emerald-400',
-        description: '記載清華梅竹賽歷史的紀念特刊，封底條碼下方印有一行備註：『1F 防盜門密碼：1911』。'
+        description: '記載清華梅竹賽歷史的紀念特刊，封底條碼下方印有一行備註：『1F 正門密碼：1911』。'
       },
       firedoor_key: {
         id: 'firedoor_key',
@@ -1453,7 +1453,7 @@
         return;
       }
       if (!gameState.laptopLoggedIn) {
-        addStoryLog("按下書脊沒有反應...（需要以正確按壓順序）。");
+        addStoryLog("按下書脊沒有反應...（好像要先做甚麼，再以正確按壓順序）。");
         return;
       }
 
