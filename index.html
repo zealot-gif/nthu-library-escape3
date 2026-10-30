@@ -89,6 +89,18 @@
       // 即時重新載入並刷出最新榜單
       window.loadLeaderboard();
     };
+      // 全域 HTML 轉義函式（防止 XSS 攻擊）
+      function escapeHTML(str) {
+        return String(str || '').replace(/[&<>"']/g, function(m) {
+          return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+          }[m];
+        });
+      }
 
     window.loadLeaderboard = async function() {
       const container = document.getElementById('leaderboard-list');
@@ -130,13 +142,14 @@
       let html = '';
       uniqueRecords.slice(0, 10).forEach((item, idx) => {
         const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+        const safeName = escapeHTML(item.name || '匿名玩家');
+        const safeTitle = escapeHTML(item.title || '旺宏館解謎學霸');
         html += `
           <div class="flex justify-between items-center bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
             <span class="text-purple-300 font-bold flex items-center gap-1">
               <span class="w-5 text-center">${medal}</span>
-              <span class="truncate max-w-[100px]">${item.name || '匿名玩家'}</span>
-              <span class="text-[9px] px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/60 font-normal">${item.title || '旺宏館解謎學霸'}</span>
-            </span>
+              <span class="truncate max-w-[100px]">${safeName}</span>
+              <span class="text-[9px] px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/60 font-normal">${safeTitle}</span></span>
             <span class="text-amber-400 font-bold">${item.timeStr || '00:00'}</span>
           </div>
         `;
