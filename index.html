@@ -69,12 +69,13 @@
       if (!title) title = "旺宏館解謎學霸";
       
       const record = {
+        id: Date.now() + '_' + Math.random().toString(36).substr(2, 5),
         name: name,
         timeStr: timeStr,
         seconds: seconds,
         title: title,
         timestamp: Date.now()
-      };
+    };
 
       // 優先寫入本機備份，確保任何環境下上一個人的紀錄都能 100% 被顯示
       saveLocalLeaderboard(record);
@@ -125,7 +126,8 @@
       const seenKeys = new Set();
 
       for (const item of allRecords) {
-        const key = `${item.name}-${item.seconds}-${item.timeStr}`;
+        // 優先使用唯一的 id 去重，若為舊資料則使用時間戳記與內容拼接
+        const key = item.id || `${item.name}-${item.seconds}-${item.timestamp || item.timeStr}`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
           uniqueRecords.push(item);
@@ -270,7 +272,7 @@
       </div>
       <div>
         <h1 class="font-bold text-base md:text-lg text-purple-200 tracking-wide flex items-center gap-2">
-          逃出清華旺宏館 <span class="text-xs bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-mono">NTHU 1911</span>
+          逃出清華旺宏館 <span class="text-xs bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-mono">NTHU 2026</span>
         </h1>
         <p id="scene-title" class="text-xs text-slate-400">當前位置：2F 閱覽區 / 讀書桌</p>
       </div>
