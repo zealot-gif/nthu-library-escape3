@@ -265,64 +265,63 @@
 <body class="h-screen w-screen flex flex-col justify-between overflow-hidden bg-slate-950 text-slate-100">
 
   <!-- TOP HEADER -->
-  <header class="h-14 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between z-20 shadow-md">
-    <div class="flex items-center space-x-3">
-      <div class="w-9 h-9 rounded-full bg-purple-900/80 border border-purple-500/50 flex items-center justify-center font-bold text-purple-300">
-        <i class="fa-solid fa-graduation-cap text-lg"></i>
+    <header class="h-auto md:h-14 bg-slate-900 border-b border-slate-800 px-3 py-2 md:px-4 flex flex-wrap md:flex-nowrap items-center justify-between gap-2 z-20 shadow-md">
+      <div class="flex items-center space-x-2">
+        <div class="w-8 h-8 rounded-full bg-purple-900/80 border border-purple-500/50 flex items-center justify-center font-bold text-purple-300 shrink-0">
+          <i class="fa-solid fa-graduation-cap text-sm"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-sm md:text-lg text-purple-200 tracking-wide flex items-center gap-1.5 whitespace-nowrap">
+            逃出清華旺宏館 <span class="text-[10px] md:text-xs bg-purple-950 text-purple-300 border border-purple-800 px-1.5 py-0.5 rounded-full font-mono">NTHU 2026</span>
+          </h1>
+          <p id="scene-title" class="text-[10px] md:text-xs text-slate-400">當前位置：2F 閱覽區 / 讀書桌</p>
+        </div>
       </div>
-      <div>
-        <h1 class="font-bold text-base md:text-lg text-purple-200 tracking-wide flex items-center gap-2">
-          逃出清華旺宏館 <span class="text-xs bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-mono">NTHU 2026</span>
-        </h1>
-        <p id="scene-title" class="text-xs text-slate-400">當前位置：2F 閱覽區 / 讀書桌</p>
+      <!-- Timer & Controls -->
+      <div class="flex items-center space-x-2 md:space-x-4 ml-auto">
+        <div class="bg-slate-950 border border-slate-800 px-2 py-1 rounded-lg flex items-center space-x-1 font-mono text-[11px] md:text-xs">
+          <i class="fa-regular fa-clock text-amber-400"></i>
+          <span class="text-slate-400 hidden sm:inline">遊玩:</span>
+          <span id="game-timer" class="text-amber-300 font-semibold">00:00</span>
+        </div>
+        <div class="bg-purple-950/80 border border-purple-800 px-2 py-1 rounded-lg flex items-center space-x-1 font-mono text-[11px] md:text-xs">
+          <i class="fa-solid fa-building text-purple-400"></i>
+          <span class="text-purple-300 hidden sm:inline">館內:</span>
+          <span id="in-game-clock" class="text-purple-200 font-bold">22:00</span>
+        </div>
+        <button id="btn-sound" onclick="toggleSound()" class="p-1.5 text-slate-400 hover:text-white" title="切換音效">
+          <i id="sound-icon" class="fa-solid fa-volume-high text-base"></i>
+        </button>
+        <button onclick="showHelpModal()" class="p-1.5 text-slate-400 hover:text-white" title="求助與說明">
+          <i class="fa-solid fa-circle-question text-base"></i>
+        </button>
       </div>
-    </div>
-
-    <!-- Timer & Controls -->
-    <div class="flex items-center space-x-4">
-      <div class="bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg flex items-center space-x-2 font-mono text-xs">
-        <i class="fa-regular fa-clock text-amber-400"></i>
-        <span class="text-slate-400">遊玩時間:</span>
-        <span id="game-timer" class="text-amber-300 font-semibold">00:00</span>
-      </div>
-      <div class="bg-purple-950/80 border border-purple-800 px-3 py-1 rounded-lg flex items-center space-x-2 font-mono text-xs">
-        <i class="fa-solid fa-building text-purple-400"></i>
-        <span class="text-purple-300">館內時間:</span>
-        <span id="in-game-clock" class="text-purple-200 font-bold">22:00</span>
-      </div>
-      <button id="btn-sound" onclick="toggleSound()" class="p-2 text-slate-400 hover:text-white transition-colors" title="切換音效">
-        <i id="sound-icon" class="fa-solid fa-volume-high text-lg"></i>
-      </button>
-      <button onclick="showHelpModal()" class="p-2 text-slate-400 hover:text-white transition-colors" title="求助與說明">
-        <i class="fa-solid fa-circle-question text-lg"></i>
-      </button>
-    </div>
-  </header>
+    </header>
 
   <!-- MAIN SCENE CONTAINER -->
-  <main class="flex-1 flex flex-col md:flex-row relative overflow-hidden">
-    <div id="scene-container" class="relative flex-1 bg-slate-900 flex items-center justify-center overflow-hidden">
-      <!-- Flashlight Dark Mode Layer -->
-      <div id="flashlight-layer" class="absolute inset-0 pointer-events-none z-10 hidden dark-overlay"></div>
+    <main class="flex-1 flex flex-col md:flex-row relative overflow-y-auto md:overflow-hidden">
+      <div id="scene-container" class="relative flex-1 bg-slate-900 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+        <!-- SCENE 1: STUDY DESK -->
+        <div id="scene-desk" class="scene relative w-full h-auto min-h-[480px] max-w-4xl bg-slate-800 flex flex-col justify-between p-3 sm:p-6 shadow-2xl rounded-lg border border-slate-700/50 my-auto mx-auto overflow-hidden">
 
-      <!-- SCENE 1: STUDY DESK -->
+  <!-- SCENE 1: STUDY DESK -->
       <div id="scene-desk" class="scene relative w-full h-full max-w-4xl max-h-[600px] bg-slate-800 flex flex-col justify-between p-6 shadow-2xl rounded-lg border border-slate-700/50 my-auto mx-auto overflow-hidden">
         <div class="absolute inset-0 bg-gradient-to-b from-slate-900 via-amber-950/20 to-slate-900 opacity-90"></div>
         <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent"></div>
 
         <div class="relative z-0 h-full w-full flex flex-col justify-between">
           <!-- Top Area -->
-          <div class="flex justify-between items-start">
-            <div id="hotspot-noticeboard" onclick="inspectNoticeBoard()" class="hotspot bg-amber-900/40 border border-amber-700/50 p-3 rounded-lg shadow-md max-w-xs text-xs text-amber-200/90 backdrop-blur-sm">
+          <div class="flex flex-col sm:flex-row justify-between items-center sm:items-start gap-3 w-full">
+            <div id="hotspot-noticeboard" onclick="inspectNoticeBoard()" class="hotspot bg-amber-900/40 border border-amber-700/50 p-2.5 rounded-lg shadow-md w-full sm:max-w-xs text-xs text-amber-200/90 backdrop-blur-sm">
               <div class="font-bold border-b border-amber-700/50 pb-1 mb-1 flex items-center justify-between">
                 <span>📌 旺宏圖書館公告</span>
                 <span class="text-[10px] text-amber-400">10:00 PM 閉館</span>
               </div>
-              <p class="leading-relaxed">因校園電力維護，深夜閉館後請使用緊急門禁系統通行。抽屜密碼為館內聯絡分機：114。</p>
+              <p class="leading-relaxed text-[11px] sm:text-xs">因校園電力維護，深夜閉館後請使用緊急門禁系統通行。抽屜密碼為館內聯絡分機：114。</p>
             </div>
 
             <!-- Front Desk Partition Wall -->
-              <div id="hotspot-desk-wall" onclick="inspectDeskWall()" class="hotspot bg-slate-900/90 border-2 border-slate-700/80 rounded-lg p-3 w-72 md:w-96 text-center shadow-lg relative group mx-auto mt-12">
+            <div id="hotspot-desk-wall" onclick="inspectDeskWall()" class="hotspot bg-slate-900/90 border-2 border-slate-700/80 rounded-lg p-2.5 w-full max-w-[280px] sm:w-80 text-center shadow-lg relative group">
               <div class="text-xs text-slate-300 font-bold mb-1 flex items-center justify-center gap-2">
                 <i class="fa-solid fa-border-all text-purple-400"></i> 讀書桌正面隔板
               </div>
@@ -332,18 +331,16 @@
               </div>
             </div>
 
-            <!-- Window View -->
-            <div class="w-36 h-24 bg-slate-950 border-2 border-slate-700 rounded-md p-1 relative overflow-hidden shadow-inner hidden md:block">
+            <!-- Window View (桌面較寬時才顯示) -->
+            <div class="w-28 h-20 bg-slate-950 border-2 border-slate-700 rounded-md p-1 relative overflow-hidden shadow-inner hidden lg:block shrink-0">
               <div class="text-[9px] text-slate-500 text-end">大草坪夜景</div>
               <div class="absolute bottom-2 left-3 w-2 h-2 bg-amber-400/80 rounded-full blur-[1px]"></div>
-              <div class="absolute bottom-4 left-10 w-1.5 h-1.5 bg-purple-400/80 rounded-full blur-[1px]"></div>
-              <div class="absolute top-2 right-2 text-slate-700"><i class="fa-solid fa-moon text-lg"></i></div>
+              <div class="absolute top-2 right-2 text-slate-700"><i class="fa-solid fa-moon text-base"></i></div>
             </div>
           </div>
 
           <!-- Desk Surface -->
-          <div class="relative mt-8 bg-amber-950/60 border-t-4 border-amber-800/80 rounded-t-xl p-6 flex justify-between items-end min-h-[240px] shadow-2xl">
-            <!-- Laptop -->
+          <div class="relative mt-4 sm:mt-8 bg-amber-950/60 border-t-4 border-amber-800/80 rounded-t-xl p-3 sm:p-6 flex flex-wrap sm:flex-nowrap justify-around sm:justify-between items-end gap-2 min-h-[200px] shadow-2xl">            <!-- Laptop -->
             <div class="flex flex-col items-center">
               <div id="hotspot-laptop" onclick="inspectLaptop()" class="hotspot bg-slate-800 border-2 border-slate-600 rounded-t-lg w-36 h-24 flex flex-col justify-center items-center shadow-lg relative">
                 <div class="w-28 h-16 bg-slate-950 border border-slate-700 rounded p-1 flex flex-col items-center justify-center text-center">
