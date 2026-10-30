@@ -334,16 +334,13 @@
 
             <!-- Window View -->
             <div class="w-36 h-24 bg-slate-950 border-2 border-slate-700 rounded-md p-1 relative overflow-hidden shadow-inner hidden md:block">
-              <div class="text-[9px] text-slate-400 text-end">大草坪夜景</div>
-              <!-- 微弱背景星光 -->
-              <div class="absolute bottom-2 left-3 w-1.5 h-1.5 bg-amber-200/50 rounded-full blur-[0.5px]"></div>
-              <div class="absolute top-8 left-8 w-1 h-1 bg-purple-300/60 rounded-full"></div>
-              <!-- 顯眼發光的月亮圖示 -->
-              <div class="absolute top-3 left-4 text-amber-200 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]">
-                <i class="fa-solid fa-moon text-2xl"></i>
-              </div>
+              <div class="text-[9px] text-slate-500 text-end">大草坪夜景</div>
+              <div class="absolute bottom-2 left-3 w-2 h-2 bg-amber-400/80 rounded-full blur-[1px]"></div>
+              <div class="absolute bottom-4 left-10 w-1.5 h-1.5 bg-purple-400/80 rounded-full blur-[1px]"></div>
+              <div class="absolute top-2 right-2 text-slate-700"><i class="fa-solid fa-moon text-lg"></i></div>
             </div>
-            
+          </div>
+
           <!-- Desk Surface -->
           <div class="relative mt-8 bg-amber-950/60 border-t-4 border-amber-800/80 rounded-t-xl p-6 flex justify-between items-end min-h-[240px] shadow-2xl">
             <!-- Laptop -->
@@ -407,7 +404,7 @@
             <h2 class="text-amber-400 font-bold text-sm flex items-center gap-2">
               <i class="fa-solid fa-book"></i> 3F 特藏與理工圖書區 (800 / 300 類)
             </h2>
-            <div class="text-xs text-slate-400">提示：書脊連動機關</div>
+            <div class="text-xs text-slate-400">提示：書脊連動機關（需登入筆電確認順序）</div>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 my-auto">
@@ -472,12 +469,12 @@
             <!-- Stairwell Emergency Door -->
             <div id="hotspot-stairwell-door" onclick="triggerStairwellDoor()" class="hotspot bg-slate-800 border-2 border-red-900 p-4 rounded-xl flex flex-col justify-between shadow-lg">
               <div class="text-xs font-bold text-red-400 border-b border-red-900/60 pb-2 flex justify-between items-center">
-                <span>🚪 樓梯間</span>
+                <span>🚪 樓梯間防火門</span>
                 <i class="fa-solid fa-triangle-exclamation text-red-500 animate-pulse"></i>
               </div>
               <div class="bg-slate-950 rounded border border-slate-800 p-3 my-2 text-center">
                 <i class="fa-solid fa-door-closed text-3xl text-red-500 mb-1"></i>
-                <p class="text-xs text-slate-300">防火門</p>
+                <p class="text-xs text-slate-300">防盜警報門禁區域</p>
               </div>
               <div class="text-[10px] text-slate-400 text-center">注意：進入後防火門將自動反鎖！</div>
             </div>
@@ -506,7 +503,7 @@
           <div class="relative my-auto flex flex-col items-center justify-center">
             <div class="w-full max-w-md h-52 border-4 border-slate-600 rounded-xl bg-cyan-950/20 backdrop-blur-md relative flex items-center justify-between px-8 shadow-2xl overflow-hidden">
               <div class="w-2/5 h-full border-r-2 border-cyan-400/50 bg-cyan-500/10 flex items-center justify-center">
-                <span class="text-xs text-cyan-200/40 font-bold">NTHU LIBRARY</span>
+                <span class="text-xs text-cyan-200/40 transform -rotate-90 font-bold">NTHU LIBRARY</span>
               </div>
               
               <!-- Gate Keypad Hotspot -->
@@ -779,7 +776,7 @@
       <button onclick="closeModal('modal-hydrant-lock')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
 
       <h3 class="text-base font-bold text-red-400 mb-1">3F 消防栓箱 - 十字方向鎖</h3>
-      <p class="text-xs text-slate-400 mb-3">輸入 4 位方向暗碼</p>
+      <p class="text-xs text-slate-400 mb-3">輸入 4 位方向暗碼（需用紫光燈照射讀書桌前隔板）</p>
 
       <div id="hydrant-seq-display" class="bg-slate-950 border border-red-500/80 rounded py-2 mb-4 font-mono text-base text-red-400 h-10 flex items-center justify-center font-bold tracking-widest">
         ----
@@ -857,7 +854,7 @@
     <div class="bg-slate-900 border-2 border-emerald-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in relative">
       <button onclick="closeModal('modal-gate-keypad')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
       <h3 class="text-base font-bold text-emerald-300 mb-1">旺宏館正門 - 防盜管制閘門</h3>
-      <p class="text-xs text-slate-400 mb-3">需要電源導通 + 裝載晶片 + 輸入 PIN 碼 </p>
+      <p class="text-xs text-slate-400 mb-3">需要電源導通 + 裝載晶片 + 輸入特刊標示之 PIN 碼 (1911)</p>
 
       <div id="gate-pin-display" class="bg-slate-950 border border-emerald-500/80 rounded py-2 mb-4 font-mono text-2xl text-emerald-400 font-bold tracking-widest h-12 flex items-center justify-center shadow-inner">
         ----
@@ -1456,7 +1453,7 @@
         return;
       }
       if (!gameState.laptopLoggedIn) {
-        addStoryLog("按下書脊沒有反應...（需要以正確按壓順序）。");
+        addStoryLog("按下書脊沒有反應...（需要先登入筆電確認正確按壓順序）。");
         return;
       }
 
@@ -1467,7 +1464,7 @@
       if (gameState.colorBookSequence[idx] !== gameState.correctColorSequence[idx]) {
         playSound('error');
         gameState.colorBookSequence = [];
-        addStoryLog("按壓順序錯誤，機關已重置！（需要以正確按壓順序）");
+        addStoryLog("按壓順序錯誤，機關已重置！（正確順序需在筆電上確認）");
         return;
       }
 
@@ -1762,12 +1759,12 @@
     function submitGateUnlock() {
       if (!gameState.circuitSolved) {
         playSound('error');
-        addStoryLog("解鎖失敗：閘門電源尚未接通！");
+        addStoryLog("解鎖失敗：閘門電源尚未接通！（需至右上角館長控制室完成校徽拼圖）");
         return;
       }
       if (!gameState.inventory.some(item => item.id === 'gate_chip')) {
         playSound('error');
-        addStoryLog("解鎖失敗：尚未裝載閘門感應晶片！");
+        addStoryLog("解鎖失敗：尚未裝載閘門感應晶片！（需至 1F 服務櫃檯掃描《梅竹歷史特刊》）");
         return;
       }
 
