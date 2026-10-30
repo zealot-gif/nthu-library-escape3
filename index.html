@@ -10,6 +10,141 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- Google Fonts: Inter & Noto Sans TC -->
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <!-- Firebase SDK Modules -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'nthu-escape-game';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+      apiKey: "demo-key",
+      authDomain: "demo.firebaseapp.com",
+      projectId: "demo-project",
+      storageBucket: "demo.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:123456789"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    async function initAuth() {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.warn("Auth initialization skipped or failed, local fallback enabled:", e);
+      }
+    }
+
+    // Fallback local storage leaderboard array
+    function getLocalLeaderboard() {
+      try {
+        const raw = localStorage.getItem('nthu_escape_local_leaderboard');
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveLocalLeaderboard(data) {
+      try {
+        const current = getLocalLeaderboard();
+        current.push(data);
+        // 按通關時間（秒數）升冪排序
+        current.sort((a, b) => (a.seconds || 99999) - (b.seconds || 99999));
+        localStorage.setItem('nthu_escape_local_leaderboard', JSON.stringify(current.slice(0, 10)));
+      } catch (e) {
+        console.warn("Local storage save error:", e);
+      }
+    }
+
+    window.saveLeaderboardRecord = async function(name, timeStr, seconds, title) {
+      if (!name) name = "無名大師";
+      if (!title) title = "旺宏館解謎學霸";
+      
+      const record = {
+        name: name,
+        timeStr: timeStr,
+        seconds: seconds,
+        title: title,
+        timestamp: Date.now()
+      };
+
+      // 優先寫入本機備份，確保任何環境下上一個人的紀錄都能 100% 被顯示
+      saveLocalLeaderboard(record);
+
+      try {
+        const leaderCollection = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+        await addDoc(leaderCollection, record);
+      } catch (err) {
+        console.warn("Cloud leaderboard save notice (using local storage):", err);
+      }
+
+      // 即時重新載入並刷出最新榜單
+      window.loadLeaderboard();
+    };
+
+    window.loadLeaderboard = async function() {
+      const container = document.getElementById('leaderboard-list');
+      if (!container) return;
+      
+      let docs = [];
+
+      // 先讀取本機紀錄
+      const localDocs = getLocalLeaderboard();
+
+      try {
+        const leaderCollection = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+        const snapshot = await getDocs(leaderCollection);
+        snapshot.forEach(doc => docs.push(doc.data()));
+      } catch (e) {
+        console.warn("Leaderboard fetch notice, rendering local records:", e);
+      }
+
+      // 合併雲端與本機紀錄並去重/排序
+      const allRecords = [...docs, ...localDocs];
+      const uniqueRecords = [];
+      const seenKeys = new Set();
+
+      for (const item of allRecords) {
+        const key = `${item.name}-${item.seconds}-${item.timeStr}`;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          uniqueRecords.push(item);
+        }
+      }
+
+      uniqueRecords.sort((a, b) => (a.seconds || 99999) - (b.seconds || 99999));
+
+      if (uniqueRecords.length === 0) {
+        container.innerHTML = `<p class="text-slate-500 text-center py-2 text-[11px]">尚無英雄榜紀錄，快來成為第一位吧！</p>`;
+        return;
+      }
+
+      let html = '';
+      uniqueRecords.slice(0, 10).forEach((item, idx) => {
+        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+        html += `
+          <div class="flex justify-between items-center bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
+            <span class="text-purple-300 font-bold flex items-center gap-1">
+              <span class="w-5 text-center">${medal}</span>
+              <span class="truncate max-w-[100px]">${item.name || '匿名玩家'}</span>
+              <span class="text-[9px] px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/60 font-normal">${item.title || '旺宏館解謎學霸'}</span>
+            </span>
+            <span class="text-amber-400 font-bold">${item.timeStr || '00:00'}</span>
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+    };
+  </script>
+
   <style>
     body {
       font-family: 'Noto Sans TC', sans-serif;
@@ -29,6 +164,9 @@
     
     .glow-yellow {
       box-shadow: 0 0 15px rgba(234, 179, 8, 0.6);
+    }
+    .glow-green {
+      box-shadow: 0 0 15px rgba(34, 197, 94, 0.6);
     }
 
     @keyframes fadeIn {
@@ -50,12 +188,21 @@
       background: #30363d;
       border-radius: 3px;
     }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #484f58;
+    }
 
     .dark-overlay {
       background: radial-gradient(circle 180px at var(--cursor-x, 50%) var(--cursor-y, 50%), transparent 0%, rgba(0,0,0,0.92) 100%);
     }
 
-    /* Klotski Sliding Tile Puzzle */
+    /* Klotski Puzzle Grid Styling */
+    .puzzle-container {
+      position: relative;
+      width: 100%;
+      max-width: 300px;
+      aspect-ratio: 1 / 1;
+    }
     .puzzle-board {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -63,12 +210,11 @@
       gap: 4px;
       width: 100%;
       height: 100%;
-      background-color: #0f172a;
+      background-color: #1e293b;
       padding: 6px;
       border-radius: 12px;
-      box-shadow: 0 10px 20px rgba(0,0,0,0.6);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
     }
-
     .tile {
       position: relative;
       width: 100%;
@@ -80,35 +226,30 @@
       transition: transform 0.15s ease, filter 0.15s ease;
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
     }
-
     .tile:not(.empty):hover {
       filter: brightness(1.15);
       transform: scale(0.98);
-      box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
     }
-
     .tile.empty {
       background-image: none !important;
       background-color: rgba(15, 23, 42, 0.6);
       border: 2px dashed #334155;
       cursor: default;
     }
-
     .tile.solved-full {
       background-image: url('https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ec/Tsinghua_University_Logo.svg/500px-Tsinghua_University_Logo.svg.png') !important;
       border: none !important;
       animation: pulseWin 1s ease-in-out infinite alternate;
     }
-
     @keyframes pulseWin {
       from { box-shadow: 0 0 10px rgba(168, 85, 247, 0.4); }
       to { box-shadow: 0 0 25px rgba(168, 85, 247, 0.9); }
     }
   </style>
 </head>
-<body class="h-screen w-screen flex flex-col justify-between overflow-hidden bg-slate-950">
+<body class="h-screen w-screen flex flex-col justify-between overflow-hidden bg-slate-950 text-slate-100">
 
-  <!-- TOP BAR / HEADER -->
+  <!-- TOP HEADER -->
   <header class="h-14 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between z-20 shadow-md">
     <div class="flex items-center space-x-3">
       <div class="w-9 h-9 rounded-full bg-purple-900/80 border border-purple-500/50 flex items-center justify-center font-bold text-purple-300">
@@ -116,22 +257,23 @@
       </div>
       <div>
         <h1 class="font-bold text-base md:text-lg text-purple-200 tracking-wide flex items-center gap-2">
-          逃出清華旺宏館 <span class="text-xs bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-mono">NTHU 1956</span>
+          逃出清華旺宏館 <span class="text-xs bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-mono">NTHU 1911</span>
         </h1>
         <p id="scene-title" class="text-xs text-slate-400">當前位置：2F 閱覽區 / 讀書桌</p>
       </div>
     </div>
 
-    <!-- Timers & Sound Controls -->
+    <!-- Timer & Controls -->
     <div class="flex items-center space-x-4">
       <div class="bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg flex items-center space-x-2 font-mono text-xs">
-        <i class="fa-regular fa-clock text-purple-400"></i>
-        <span class="text-slate-400">館內時間:</span>
-        <span id="ingame-clock" class="text-purple-300 font-bold">22:00</span>
-      </div>
-      <div class="bg-slate-950 border border-slate-800 px-3 py-1 rounded-lg flex items-center space-x-2 font-mono text-xs">
-        <i class="fa-solid fa-stopwatch text-amber-400"></i>
+        <i class="fa-regular fa-clock text-amber-400"></i>
+        <span class="text-slate-400">遊玩時間:</span>
         <span id="game-timer" class="text-amber-300 font-semibold">00:00</span>
+      </div>
+      <div class="bg-purple-950/80 border border-purple-800 px-3 py-1 rounded-lg flex items-center space-x-2 font-mono text-xs">
+        <i class="fa-solid fa-building text-purple-400"></i>
+        <span class="text-purple-300">館內時間:</span>
+        <span id="in-game-clock" class="text-purple-200 font-bold">22:00</span>
       </div>
       <button id="btn-sound" onclick="toggleSound()" class="p-2 text-slate-400 hover:text-white transition-colors" title="切換音效">
         <i id="sound-icon" class="fa-solid fa-volume-high text-lg"></i>
@@ -142,10 +284,8 @@
     </div>
   </header>
 
-  <!-- MAIN GAME AREA -->
+  <!-- MAIN SCENE CONTAINER -->
   <main class="flex-1 flex flex-col md:flex-row relative overflow-hidden">
-
-    <!-- GAME CANVAS / SCENE CONTAINER -->
     <div id="scene-container" class="relative flex-1 bg-slate-900 flex items-center justify-center overflow-hidden">
       <!-- Flashlight Dark Mode Layer -->
       <div id="flashlight-layer" class="absolute inset-0 pointer-events-none z-10 hidden dark-overlay"></div>
@@ -154,65 +294,66 @@
       <div id="scene-desk" class="scene relative w-full h-full max-w-4xl max-h-[600px] bg-slate-800 flex flex-col justify-between p-6 shadow-2xl rounded-lg border border-slate-700/50 my-auto mx-auto overflow-hidden">
         <div class="absolute inset-0 bg-gradient-to-b from-slate-900 via-amber-950/20 to-slate-900 opacity-90"></div>
         <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent"></div>
-        
+
         <div class="relative z-0 h-full w-full flex flex-col justify-between">
-          <!-- Top Area: Notice Board, Desk Wall Board & Window -->
+          <!-- Top Area -->
           <div class="flex justify-between items-start">
             <div id="hotspot-noticeboard" onclick="inspectNoticeBoard()" class="hotspot bg-amber-900/40 border border-amber-700/50 p-3 rounded-lg shadow-md max-w-xs text-xs text-amber-200/90 backdrop-blur-sm">
               <div class="font-bold border-b border-amber-700/50 pb-1 mb-1 flex items-center justify-between">
                 <span>📌 旺宏圖書館公告</span>
                 <span class="text-[10px] text-amber-400">10:00 PM 閉館</span>
               </div>
-              <p class="leading-relaxed">因校園電力維護，深夜閉館後請使用緊急門禁系統通行。夜間緊急分機：114。</p>
+              <p class="leading-relaxed">因校園電力維護，深夜閉館後請使用緊急門禁系統通行。抽屜密碼為館內聯絡分機：114。</p>
             </div>
 
-            <!-- Desk Front Divider Wall Spot -->
-            <div id="hotspot-desk-wall" onclick="inspectDeskWall()" class="hotspot bg-slate-900/80 border-2 border-purple-500/40 hover:border-purple-400 p-2.5 rounded-xl shadow-lg w-72 md:w-96 text-center backdrop-blur-sm transform transition-all">
-              <div class="flex items-center justify-center gap-2 text-xs font-bold text-purple-300 border-b border-purple-800/50 pb-1 mb-1">
-                <i class="fa-solid fa-lightbulb text-amber-400"></i>
-                <span>讀書桌正面隔板壁面</span>
+            <!-- Front Desk Partition Wall -->
+            <div id="hotspot-desk-wall" onclick="inspectDeskWall()" class="hotspot bg-slate-900/90 border-2 border-slate-700/80 rounded-lg p-3 w-72 md:w-96 text-center shadow-lg relative group">
+              <div class="text-xs text-slate-300 font-bold mb-1 flex items-center justify-center gap-2">
+                <i class="fa-solid fa-border-all text-purple-400"></i> 讀書桌正面隔板
               </div>
-              <p class="text-[10px] text-slate-400">壁面隱約留有不尋常的痕跡，開啟 UV 紫光手電筒近距離照射觀察...</p>
+              <div class="text-[10px] text-slate-400">（看似普通灰白色的閱覽桌隔板牆...）</div>
+              <div id="wall-uv-indicator" class="hidden mt-1 text-[11px] text-amber-300 font-mono font-bold bg-purple-950/80 p-1 rounded border border-purple-600">
+                🔦 紫光照射顯影：↑ ↓ ← →
+              </div>
             </div>
 
-            <!-- Window Night View -->
-            <div class="w-32 h-20 bg-slate-950 border-2 border-slate-700 rounded-md p-1 relative overflow-hidden shadow-inner hidden md:block">
+            <!-- Window View -->
+            <div class="w-36 h-24 bg-slate-950 border-2 border-slate-700 rounded-md p-1 relative overflow-hidden shadow-inner hidden md:block">
               <div class="text-[9px] text-slate-500 text-end">大草坪夜景</div>
               <div class="absolute bottom-2 left-3 w-2 h-2 bg-amber-400/80 rounded-full blur-[1px]"></div>
-              <div class="absolute bottom-1 right-6 w-3 h-3 bg-amber-200/50 rounded-full blur-[2px]"></div>
+              <div class="absolute bottom-4 left-10 w-1.5 h-1.5 bg-purple-400/80 rounded-full blur-[1px]"></div>
               <div class="absolute top-2 right-2 text-slate-700"><i class="fa-solid fa-moon text-lg"></i></div>
             </div>
           </div>
 
           <!-- Desk Surface -->
-          <div class="relative mt-8 bg-amber-950/60 border-t-4 border-amber-800/80 rounded-t-xl p-6 flex justify-between items-end min-h-[260px] shadow-2xl">
-            <!-- Left: Laptop -->
+          <div class="relative mt-8 bg-amber-950/60 border-t-4 border-amber-800/80 rounded-t-xl p-6 flex justify-between items-end min-h-[240px] shadow-2xl">
+            <!-- Laptop -->
             <div class="flex flex-col items-center">
-              <div id="hotspot-laptop" onclick="inspectLaptop()" class="hotspot bg-slate-800 border-2 border-slate-600 rounded-t-lg w-40 h-28 flex flex-col justify-center items-center shadow-lg relative group">
-                <div class="w-32 h-20 bg-slate-950 border border-slate-700 rounded p-1 flex flex-col items-center justify-center text-center">
-                  <i class="fa-solid fa-laptop-code text-purple-400 text-xl mb-1"></i>
-                  <span class="text-[10px] text-purple-300 font-mono">NTHU Portal</span>
-                  <span id="laptop-status-text" class="text-[9px] text-slate-500">待機鎖定中</span>
+              <div id="hotspot-laptop" onclick="inspectLaptop()" class="hotspot bg-slate-800 border-2 border-slate-600 rounded-t-lg w-36 h-24 flex flex-col justify-center items-center shadow-lg relative">
+                <div class="w-28 h-16 bg-slate-950 border border-slate-700 rounded p-1 flex flex-col items-center justify-center text-center">
+                  <i class="fa-solid fa-laptop-code text-purple-400 text-lg mb-0.5"></i>
+                  <span class="text-[9px] text-purple-300 font-mono">NTHU Portal</span>
                 </div>
-                <div class="w-48 h-3 bg-slate-700 rounded-b-md border-t border-slate-600"></div>
+                <div class="w-40 h-2.5 bg-slate-700 rounded-b-md border-t border-slate-600"></div>
               </div>
-              <span class="text-xs text-slate-400 mt-2"><i class="fa-solid fa-magnifying-glass text-[10px] mr-1"></i>筆記型電腦</span>
+              <span class="text-[11px] text-slate-400 mt-1">筆記型電腦</span>
             </div>
 
-            <!-- Middle: Books & Coffee -->
+            <!-- Books & Coffee -->
             <div class="flex items-end space-x-4">
               <!-- Calculus Notebook -->
-              <div id="hotspot-notebook" onclick="openNotebookModal()" class="hotspot bg-cyan-900/60 border border-cyan-500/50 w-20 h-28 rounded-r-lg p-2 shadow-md transform -rotate-6 relative">
+              <div id="hotspot-notebook" onclick="inspectNotebook()" class="hotspot bg-cyan-900/60 border border-cyan-500/50 w-20 h-28 rounded-r-lg p-2 shadow-md transform -rotate-6 relative">
                 <div class="border-l-4 border-cyan-400 h-full pl-1 flex flex-col justify-between">
-                  <span class="text-[9px] font-bold text-cyan-200">微積分演算法筆記</span>
+                  <span class="text-[9px] font-bold text-cyan-200 leading-tight">微積分與演算法筆記</span>
                   <i class="fa-solid fa-book-open text-cyan-400 self-end text-xs"></i>
                 </div>
               </div>
 
               <!-- NTHU History Book -->
-              <div id="hotspot-nthu-history" onclick="inspectNthuHistoryBook()" class="hotspot bg-purple-900/70 border border-purple-400/60 w-22 h-30 rounded-r-lg p-2 shadow-md transform rotate-3 relative hover:scale-105">
-                <div class="border-l-4 border-purple-300 h-full pl-1 flex flex-col justify-between">
-                  <span class="text-[9px] font-bold text-purple-100">清大校史專書</span>
+              <div id="hotspot-history-book" onclick="openNthuHistoryModal()" class="hotspot bg-purple-900/60 border border-purple-500/50 w-20 h-28 rounded-r-lg p-2 shadow-md transform rotate-3 relative">
+                <div class="border-l-4 border-purple-400 h-full pl-1 flex flex-col justify-between">
+                  <span class="text-[9px] font-bold text-purple-200 leading-tight">《清大校史專書》</span>
                   <i class="fa-solid fa-graduation-cap text-purple-300 self-end text-xs"></i>
                 </div>
               </div>
@@ -220,21 +361,20 @@
               <!-- Coffee Cup -->
               <div id="hotspot-coffeecup" onclick="inspectCup()" class="hotspot w-10 h-14 bg-gradient-to-b from-slate-200 to-slate-400 rounded-b-xl rounded-t-sm flex flex-col items-center justify-between p-1 shadow-md">
                 <div class="w-12 h-2 bg-emerald-800 rounded-full border border-emerald-600"></div>
-                <div class="w-5 h-5 rounded-full bg-emerald-700 flex items-center justify-center text-[8px] text-white font-bold">N</div>
+                <div class="w-4 h-4 rounded-full bg-emerald-700 flex items-center justify-center text-[8px] text-white font-bold">N</div>
                 <div class="text-[8px] text-slate-700 font-bold">水木咖啡</div>
               </div>
             </div>
 
-            <!-- Right: Drawer Lockbox -->
-            <div id="hotspot-drawer" onclick="inspectDrawer()" class="hotspot w-40 h-28 bg-amber-900 border-2 border-amber-700 rounded-lg p-2 flex flex-col justify-center items-center shadow-inner relative">
-              <div class="w-full h-12 bg-amber-950 border border-amber-800 rounded flex items-center justify-between px-3">
+            <!-- Drawer -->
+            <div id="hotspot-drawer" onclick="inspectDrawer()" class="hotspot w-36 h-24 bg-amber-900 border-2 border-amber-700 rounded-lg p-2 flex flex-col justify-center items-center shadow-inner relative">
+              <div class="w-full h-10 bg-amber-950 border border-amber-800 rounded flex items-center justify-between px-3">
                 <span class="text-xs text-amber-200 font-mono">抽屜 01</span>
                 <div id="drawer-lock-indicator" class="w-4 h-4 rounded-full bg-red-500/80 border border-red-300 flex items-center justify-center">
                   <i class="fa-solid fa-lock text-[8px] text-white"></i>
                 </div>
               </div>
               <div class="w-8 h-2 bg-amber-700 rounded-full mt-2 shadow"></div>
-              <span class="text-[10px] text-amber-300/80 mt-1">數字密碼鎖抽屜</span>
             </div>
           </div>
         </div>
@@ -243,124 +383,122 @@
       <!-- SCENE 2: BOOKSHELVES -->
       <div id="scene-bookshelves" class="scene relative w-full h-full max-w-4xl max-h-[600px] bg-slate-900 hidden flex-col justify-between p-6 shadow-2xl rounded-lg border border-slate-700/50 my-auto mx-auto overflow-hidden">
         <div class="absolute inset-0 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950"></div>
+
         <div class="relative z-10 h-full flex flex-col justify-between">
           <div class="flex justify-between items-center border-b border-slate-800 pb-2">
             <h2 class="text-amber-400 font-bold text-sm flex items-center gap-2">
-              <i class="fa-solid fa-book"></i> 3F 特藏與理工圖書區
+              <i class="fa-solid fa-book"></i> 3F 特藏與理工圖書區 (800 / 300 類)
             </h2>
-            <div class="text-xs text-slate-400">提示：需至筆電檢索彩虹書脊連動順序</div>
+            <div class="text-xs text-slate-400">提示：書脊連動機關（需登入筆電確認順序）</div>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 my-auto">
+            <!-- Left Shelf: Color Books -->
             <div class="bg-amber-950/40 border-2 border-amber-900/60 p-4 rounded-xl flex flex-col justify-between h-52 shadow-inner">
-              <div class="text-xs text-amber-300 font-mono border-b border-amber-900/50 pb-1">架號 800 - 彩虹連動書架</div>
+              <div class="text-xs text-amber-300 font-mono border-b border-amber-900/50 pb-1">架號 800 - 彩虹機關連動區</div>
               <div id="color-books-row" class="flex items-end space-x-2 h-32 px-2 bg-slate-950/60 rounded-md border border-slate-800 p-2">
-                <div onclick="clickColorBook('red')" class="hotspot w-6 h-28 bg-red-700 rounded-t border-t border-red-400 flex flex-col justify-between items-center py-2 text-[9px] text-white font-mono font-bold"><span>8</span><span>0</span><span>1</span></div>
-                <div onclick="clickColorBook('blue')" class="hotspot w-6 h-24 bg-blue-700 rounded-t border-t border-blue-400 flex flex-col justify-between items-center py-2 text-[9px] text-white font-mono font-bold"><span>8</span><span>2</span><span>5</span></div>
-                <div onclick="clickColorBook('green')" class="hotspot w-6 h-26 bg-emerald-700 rounded-t border-t border-emerald-400 flex flex-col justify-between items-center py-2 text-[9px] text-white font-mono font-bold"><span>8</span><span>5</span><span>0</span></div>
-                <div onclick="clickColorBook('yellow')" class="hotspot w-6 h-30 bg-amber-500 rounded-t border-t border-amber-300 flex flex-col justify-between items-center py-2 text-[9px] text-slate-950 font-mono font-bold"><span>8</span><span>8</span><span>8</span></div>
-              </div>
-              <div class="text-[10px] text-slate-400 text-center">依筆電檢索出的順序按壓書籍（按錯將重置）</div>
-            </div>
-
-            <!-- Compass Cabinet Hotspot -->
-            <div id="hotspot-compass-cabinet" onclick="openCompassModal()" class="hotspot bg-amber-950/40 border-2 border-amber-900/60 p-4 rounded-xl flex flex-col justify-between h-52 shadow-inner">
-              <div class="text-xs text-amber-300 font-mono border-b border-amber-900/50 pb-1">梅園方位羅盤展示櫃</div>
-              <div class="relative h-32 bg-slate-950/60 rounded-md border border-slate-800 p-2 flex items-center justify-center">
-                <div class="w-48 h-24 bg-slate-800 border-2 border-amber-700/80 rounded flex flex-col items-center justify-center p-2 text-center shadow-lg">
-                  <i class="fa-solid fa-compass text-2xl text-amber-400 mb-1"></i>
-                  <span class="text-xs text-amber-200 font-bold">梅園羅盤控制鎖</span>
-                  <span id="compass-status-text" class="text-[10px] text-red-400">狀態：方位鎖定中</span>
+                <div onclick="clickColorBook('red')" class="hotspot w-6 h-28 bg-red-700 rounded-t border-t border-red-400 flex flex-col justify-between items-center py-2 text-[9px] text-white font-mono font-bold hover:brightness-125">
+                  <span>8</span><span>0</span><span>1</span>
+                </div>
+                <div onclick="clickColorBook('blue')" class="hotspot w-6 h-24 bg-blue-700 rounded-t border-t border-blue-400 flex flex-col justify-between items-center py-2 text-[9px] text-white font-mono font-bold hover:brightness-125">
+                  <span>8</span><span>2</span><span>5</span>
+                </div>
+                <div onclick="clickColorBook('green')" class="hotspot w-6 h-26 bg-emerald-700 rounded-t border-t border-emerald-400 flex flex-col justify-between items-center py-2 text-[9px] text-white font-mono font-bold hover:brightness-125">
+                  <span>8</span><span>5</span><span>0</span>
+                </div>
+                <div onclick="clickColorBook('yellow')" class="hotspot w-6 h-30 bg-amber-500 rounded-t border-t border-amber-300 flex flex-col justify-between items-center py-2 text-[9px] text-slate-950 font-mono font-bold hover:brightness-125">
+                  <span>8</span><span>8</span><span>8</span>
                 </div>
               </div>
-              <div class="text-[10px] text-slate-400 text-center">按解鎖獲得的地圖方位（東➔南➔西➔北）進行解鎖</div>
+              <div class="text-[10px] text-slate-400 text-center">解開連動可獲得圖書館館藏地圖</div>
+            </div>
+
+            <!-- Right Shelf: Compass Cabinet -->
+            <div id="hotspot-compass-cabinet" onclick="openCompassModal()" class="hotspot bg-amber-950/40 border-2 border-amber-900/60 p-4 rounded-xl flex flex-col justify-between h-52 shadow-inner">
+              <div class="text-xs text-amber-300 font-mono border-b border-amber-900/50 pb-1 flex justify-between">
+                <span>梅園方位羅盤展示櫃</span>
+                <i class="fa-solid fa-compass text-amber-400"></i>
+              </div>
+              <div class="h-32 bg-slate-950/60 rounded-md border border-slate-800 p-2 flex flex-col items-center justify-center text-center">
+                <i class="fa-solid fa-compass text-3xl text-amber-500 mb-2"></i>
+                <span class="text-xs text-amber-200 font-bold">點擊進行方位擺定機關</span>
+              </div>
+              <div id="compass-status-text" class="text-[10px] text-red-400 text-center">解開後可取得《梅竹歷史特刊》</div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- SCENE 3: CIRCULATION DESK -->
+      <!-- SCENE 3: CIRCULATION & TERMINAL -->
       <div id="scene-circulation" class="scene relative w-full h-full max-w-4xl max-h-[600px] bg-slate-900 hidden flex-col justify-between p-6 shadow-2xl rounded-lg border border-slate-700/50 my-auto mx-auto overflow-hidden">
         <div class="absolute inset-0 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950"></div>
+
         <div class="relative z-10 h-full flex flex-col justify-between">
           <div class="flex justify-between items-center border-b border-slate-800 pb-2">
             <h2 class="text-purple-300 font-bold text-sm flex items-center gap-2">
-              <i class="fa-solid fa-desktop"></i> 1F 自動化流通櫃檯與條碼掃描站
+              <i class="fa-solid fa-desktop"></i> 1F 圖書館流通櫃檯與服務區
             </h2>
-            <span class="text-xs text-slate-400">自助借還書設備</span>
+            <span class="text-xs text-slate-400">自動化服務區域</span>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 my-auto">
-            <!-- Barcode Scanner -->
-            <div id="hotspot-barcode-scanner" onclick="openBarcodeScannerModal()" class="hotspot bg-slate-800 border-2 border-purple-900 p-4 rounded-xl flex flex-col items-center justify-center shadow-lg hover:border-purple-500">
+            <!-- Self Scanner -->
+            <div id="hotspot-barcode-scanner" onclick="openBarcodeScannerModal()" class="hotspot bg-slate-800 border-2 border-purple-900 p-4 rounded-xl flex flex-col items-center justify-center shadow-lg group hover:border-purple-500">
               <div class="w-full h-36 bg-slate-950 rounded border border-purple-700/50 p-2 flex flex-col justify-between items-center">
                 <i class="fa-solid fa-barcode text-4xl text-purple-400 my-auto"></i>
-                <div class="text-xs text-purple-200 font-bold">點擊使用自助條碼掃描機</div>
+                <div class="text-xs text-purple-200 font-bold">點擊使用自助借還書條碼掃描機</div>
               </div>
-              <span class="text-xs text-slate-300 mt-2 font-medium">掃描《梅竹歷史特刊》條碼</span>
+              <span class="text-xs text-slate-300 mt-2">掃描特刊可退出一片閘門晶片</span>
             </div>
 
-            <!-- Stairwell Emergency Door Hotspot -->
-            <div id="hotspot-stairwell-door" onclick="triggerStairwellDoor()" class="hotspot bg-red-950/40 border-2 border-red-800/80 p-4 rounded-xl flex flex-col justify-between shadow-lg">
-              <div class="text-xs font-bold text-red-300 border-b border-red-800 pb-2 flex justify-between items-center">
-                <span>🚪 樓梯間緊急防火門</span>
-                <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
+            <!-- Stairwell Emergency Door -->
+            <div id="hotspot-stairwell-door" onclick="triggerStairwellDoor()" class="hotspot bg-slate-800 border-2 border-red-900 p-4 rounded-xl flex flex-col justify-between shadow-lg">
+              <div class="text-xs font-bold text-red-400 border-b border-red-900/60 pb-2 flex justify-between items-center">
+                <span>🚪 樓梯間防火門</span>
+                <i class="fa-solid fa-triangle-exclamation text-red-500 animate-pulse"></i>
               </div>
-              <div class="bg-slate-950 rounded border border-red-900/50 p-3 my-2 flex items-center justify-between">
-                <div class="text-xs text-slate-300">警報連動防火門通道</div>
-                <button class="bg-red-900/60 text-red-200 text-xs px-2 py-1 rounded border border-red-700">靠近觀察</button>
+              <div class="bg-slate-950 rounded border border-slate-800 p-3 my-2 text-center">
+                <i class="fa-solid fa-door-closed text-3xl text-red-500 mb-1"></i>
+                <p class="text-xs text-slate-300">防盜警報門禁區域</p>
               </div>
-              <div class="text-[10px] text-red-400 text-center">警報開啟狀態下進入將被自動反鎖</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- SCENE: STAIRWELL (TRAPPED) -->
-      <div id="scene-stairwell" class="scene relative w-full h-full max-w-4xl max-h-[600px] bg-slate-900 hidden flex-col justify-between p-6 shadow-2xl rounded-lg border border-red-700/50 my-auto mx-auto overflow-hidden">
-        <div class="relative z-10 h-full flex flex-col justify-between">
-          <div class="flex justify-between items-center border-b border-red-800 pb-2">
-            <h2 class="text-red-400 font-bold text-sm flex items-center gap-2">
-              <i class="fa-solid fa-person-walking-arrow-right"></i> 受困於 3F 樓梯間
-            </h2>
-            <span class="text-xs bg-red-950 text-red-300 border border-red-800 px-2 py-0.5 rounded">受困反鎖狀態</span>
-          </div>
-
-          <div class="my-auto flex flex-col items-center justify-center">
-            <div id="hotspot-hydrant" onclick="openHydrantModal()" class="hotspot bg-red-900/80 border-4 border-red-600 rounded-xl p-6 shadow-2xl text-center max-w-sm">
-              <i class="fa-solid fa-fire-extinguisher text-4xl text-amber-300 mb-2"></i>
-              <h3 class="font-bold text-white text-base">3F 消防栓緊急控制箱</h3>
-              <p class="text-xs text-red-200 mt-1">配有十字方向密碼鎖（↑ ↓ ← →）。解開可取得備用防火門鑰匙。</p>
+              <div class="text-[10px] text-slate-400 text-center">注意：進入後防火門將自動反鎖！</div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- SCENE 4: MAIN ENTRANCE EXIT GATE -->
+      <!-- SCENE 4: MAIN EXIT GATE -->
       <div id="scene-exit" class="scene relative w-full h-full max-w-4xl max-h-[600px] bg-slate-900 hidden flex-col justify-between p-6 shadow-2xl rounded-lg border border-slate-700/50 my-auto mx-auto overflow-hidden">
         <div class="absolute inset-0 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950"></div>
+
         <div class="relative z-10 h-full flex flex-col justify-between">
           <div class="flex justify-between items-center border-b border-slate-800 pb-2">
             <h2 class="text-emerald-400 font-bold text-sm flex items-center gap-2">
-              <i class="fa-solid fa-door-closed"></i> 1F 旺宏館正門大廳
+              <i class="fa-solid fa-door-closed"></i> 1F 旺宏館正門與館長控制室
             </h2>
-            <!-- Director's Room Button on Top Right -->
-            <button onclick="openDirectorRoomModal()" class="bg-purple-950/80 border border-purple-500/80 hover:bg-purple-900 text-purple-200 text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 shadow">
-              <i class="fa-solid fa-key text-amber-400"></i> 館長控制室 - 電源盤
-            </button>
+            <div class="flex items-center gap-3">
+              <button onclick="openDirectorRoomModal()" class="bg-purple-900/80 hover:bg-purple-800 text-purple-200 border border-purple-500 text-xs px-3 py-1 rounded-lg font-bold shadow-lg flex items-center gap-1.5 glow-yellow">
+                <i class="fa-solid fa-key"></i> 進入館長控制室
+              </button>
+              <span id="gate-power-status" class="text-xs text-red-400 font-mono"><i class="fa-solid fa-bolt mr-1"></i>閘門電源：斷電中</span>
+            </div>
           </div>
 
-          <!-- Glass Gate Main Interface -->
+          <!-- Glass Gate -->
           <div class="relative my-auto flex flex-col items-center justify-center">
             <div class="w-full max-w-md h-52 border-4 border-slate-600 rounded-xl bg-cyan-950/20 backdrop-blur-md relative flex items-center justify-between px-8 shadow-2xl overflow-hidden">
               <div class="w-2/5 h-full border-r-2 border-cyan-400/50 bg-cyan-500/10 flex items-center justify-center">
                 <span class="text-xs text-cyan-200/40 transform -rotate-90 font-bold">NTHU LIBRARY</span>
               </div>
+              
+              <!-- Gate Keypad Hotspot -->
               <div id="hotspot-gate-keypad" onclick="openGateKeypadModal()" class="hotspot z-20 bg-slate-900 border-2 border-emerald-500/80 rounded-lg p-3 shadow-2xl flex flex-col items-center justify-center">
-                <div class="text-[10px] text-emerald-300 font-bold flex items-center gap-1">
-                  <i class="fa-solid fa-shield-halved"></i> 正門防盜管制閘門
+                <div class="w-12 h-6 bg-slate-950 rounded border border-emerald-800 flex items-center justify-center font-mono text-emerald-400 text-xs font-bold mb-1">
+                  ****
                 </div>
+                <div class="text-[9px] text-emerald-300 font-bold">正門防盜控制面板</div>
               </div>
+
               <div class="w-2/5 h-full border-l-2 border-cyan-400/50 bg-cyan-500/10 flex items-center justify-center">
                 <span class="text-xs text-cyan-200/40 transform 90 font-bold">WANG HONG BUILDING</span>
               </div>
@@ -368,30 +506,58 @@
           </div>
         </div>
       </div>
+
+      <!-- SCENE 5: STAIRWELL -->
+      <div id="scene-stairwell" class="scene relative w-full h-full max-w-4xl max-h-[600px] bg-slate-950 hidden flex-col justify-between p-6 shadow-2xl rounded-lg border border-red-900/80 my-auto mx-auto overflow-hidden">
+        <div class="relative z-10 h-full flex flex-col justify-between">
+          <div class="flex justify-between items-center border-b border-red-900/60 pb-2">
+            <h2 class="text-red-400 font-bold text-sm flex items-center gap-2">
+              <i class="fa-solid fa-stairs"></i> 受困區域：3F 樓梯間
+            </h2>
+            <span class="text-xs bg-red-950 text-red-300 border border-red-800 px-2 py-0.5 rounded-full font-bold">受困反鎖中</span>
+          </div>
+
+          <div class="my-auto flex flex-col items-center justify-center gap-4">
+            <div id="hotspot-hydrant-lock" onclick="openHydrantModal()" class="hotspot bg-slate-900 border-2 border-red-600 rounded-xl p-6 shadow-2xl flex flex-col items-center max-w-xs text-center w-full">
+              <i class="fa-solid fa-fire-extinguisher text-4xl text-red-500 mb-2"></i>
+              <h3 class="text-sm font-bold text-red-300 mb-1">3F 消防栓箱 - 十字方向密碼鎖</h3>
+              <p class="text-[11px] text-slate-400 mb-2">解開方向鎖可取得備用防火門鑰匙</p>
+              <button class="bg-red-700 hover:bg-red-600 text-white text-xs px-3 py-1.5 rounded font-bold shadow">解鎖消防栓箱</button>
+            </div>
+
+            <!-- ESCAPE WITH KEY BUTTON -->
+            <div id="stairwell-key-escape-btn" class="w-full max-w-xs text-center">
+              <button onclick="useFiredoorKeyToEscape()" class="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-slate-950 text-xs font-bold rounded-xl shadow-lg border border-amber-400 flex items-center justify-center gap-2 transition-all">
+                <i class="fa-solid fa-key"></i> 使用【備用防火門鑰匙】解鎖門鎖逃脫
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- NAVIGATION ARROWS -->
+    <!-- SCENE SWITCH NAVIGATION BAR -->
     <div class="h-14 md:h-auto md:w-16 bg-slate-900 border-t md:border-t-0 md:border-l border-slate-800 flex md:flex-col items-center justify-around p-2 z-10 shrink-0">
       <button onclick="switchScene('desk')" id="nav-desk" class="nav-btn p-2 rounded-lg text-amber-400 hover:bg-slate-800 transition-all flex flex-col items-center">
-        <i class="fa-solid fa-desk-lamp text-lg md:text-xl"></i>
+        <i class="fa-solid fa-desk-lamp text-base md:text-xl"></i>
         <span class="text-[9px] mt-0.5">讀書桌</span>
       </button>
       <button onclick="switchScene('bookshelves')" id="nav-bookshelves" class="nav-btn p-2 rounded-lg text-slate-400 hover:bg-slate-800 transition-all flex flex-col items-center">
-        <i class="fa-solid fa-book-bookmark text-lg md:text-xl"></i>
+        <i class="fa-solid fa-book-bookmark text-base md:text-xl"></i>
         <span class="text-[9px] mt-0.5">特藏書架</span>
       </button>
       <button onclick="switchScene('circulation')" id="nav-circulation" class="nav-btn p-2 rounded-lg text-slate-400 hover:bg-slate-800 transition-all flex flex-col items-center">
-        <i class="fa-solid fa-desktop text-lg md:text-xl"></i>
-        <span class="text-[9px] mt-0.5">檢索櫃檯</span>
+        <i class="fa-solid fa-desktop text-base md:text-xl"></i>
+        <span class="text-[9px] mt-0.5">服務櫃檯</span>
       </button>
       <button onclick="switchScene('exit')" id="nav-exit" class="nav-btn p-2 rounded-lg text-slate-400 hover:bg-slate-800 transition-all flex flex-col items-center">
-        <i class="fa-solid fa-door-open text-lg md:text-xl"></i>
+        <i class="fa-solid fa-door-open text-base md:text-xl"></i>
         <span class="text-[9px] mt-0.5">大門出口</span>
       </button>
     </div>
   </main>
 
-  <!-- BOTTOM PANEL: INVENTORY & LOG -->
+  <!-- BOTTOM FOOTER: STORY LOG & INVENTORY BAR -->
   <footer class="h-32 bg-slate-900 border-t border-slate-800 flex flex-col md:flex-row z-20">
     <div class="w-full md:w-1/2 p-3 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col justify-between">
       <div class="flex justify-between items-center mb-1">
@@ -401,31 +567,33 @@
         <button onclick="clearStoryLog()" class="text-[10px] text-slate-500 hover:text-slate-300">清除紀錄</button>
       </div>
       <div id="story-log" class="flex-1 bg-slate-950 rounded p-2 text-xs text-slate-300 overflow-y-auto leading-relaxed border border-slate-800 font-sans">
-        <p class="text-amber-300/90">【系統】你在清華旺宏館讀書時不小心睡著了...醒來時發現燈光暗淡，館內工作人員皆已下班。快探索四周找到方法逃出吧！</p>
+        <p class="text-amber-300/90">【系統】你在清華旺宏館讀書時不小心睡著了...醒來時發現燈光暗淡，館內工作人員皆已下班，大門已被電子鎖鎖定。快探索四周找到方法逃出吧！</p>
       </div>
     </div>
 
-    <!-- Inventory Bar -->
-    <div class="w-full md:w-1/2 p-3 flex flex-col justify-between bg-slate-900/90">
+    <div class="w-full md:w-1/2 p-3 flex flex-col justify-between bg-slate-900/90 overflow-hidden">
       <div class="flex justify-between items-center mb-1">
         <span class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
           <i class="fa-solid fa-briefcase text-amber-400"></i> 物品欄 (INVENTORY)
         </span>
         <span id="selected-item-text" class="text-[11px] text-amber-300/80 font-mono">未選取物品</span>
       </div>
-      <div id="inventory-grid" class="flex space-x-2 overflow-x-auto h-16 py-1 scrollbar-thin">
-        <!-- Generated Dynamically -->
+      
+      <!-- Scrollable Inventory Track -->
+      <div id="inventory-grid" class="flex gap-2 h-16 overflow-x-auto pb-1 items-center">
+        <!-- Dynamic Slots -->
       </div>
     </div>
   </footer>
 
   <!-- MODALS -->
 
-  <!-- Drawer Password Lock Modal -->
+  <!-- Drawer Lock Modal -->
   <div id="modal-drawer-lock" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border-2 border-amber-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in">
+      <button onclick="closeModal('modal-drawer-lock')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
       <h3 class="text-lg font-bold text-amber-300 mb-1">讀書桌抽屜 - 3位數密碼鎖</h3>
-      <p class="text-xs text-slate-400 mb-4">輸入正確的 3 位數密碼（分機號碼）</p>
+      <p class="text-xs text-slate-400 mb-4">輸入正確的 3 位數聯絡分機號碼以解鎖抽屜</p>
 
       <div class="flex justify-center space-x-3 mb-6">
         <div class="flex flex-col items-center">
@@ -446,38 +614,98 @@
       </div>
 
       <div class="flex space-x-3">
-        <button onclick="closeModal('modal-drawer-lock')" class="flex-1 py-2 bg-slate-800 text-slate-300 rounded text-sm">取消</button>
-        <button onclick="checkDrawerLock()" class="flex-1 py-2 bg-amber-600 text-slate-950 font-bold rounded text-sm">確認開鎖</button>
+        <button onclick="closeModal('modal-drawer-lock')" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-medium text-sm">取消</button>
+        <button onclick="checkDrawerLock()" class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold rounded text-sm shadow">確認開鎖</button>
       </div>
     </div>
   </div>
 
-  <!-- Notebook Inspection Modal -->
-  <div id="modal-notebook-view" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border-2 border-cyan-500 rounded-xl p-6 w-full max-w-md shadow-2xl text-center animate-fade-in relative">
-      <button onclick="closeModal('modal-notebook-view')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+  <!-- Laptop Login Modal -->
+  <div id="modal-laptop-login" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border-2 border-purple-600 rounded-xl p-6 w-full max-w-md shadow-2xl animate-fade-in relative">
+      <button onclick="closeModal('modal-laptop-login')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
       
-      <h3 class="text-base font-bold text-cyan-300 mb-2">微積分與演算法筆記本</h3>
-      <p class="text-xs text-slate-300 mb-4 leading-relaxed">筆記本內頁寫滿了微積分公式與程式演算法心得。翻開夾層時，發現卡片夾裡面塞著一張證件：</p>
+      <div class="flex items-center space-x-2 border-b border-purple-800 pb-2 mb-4">
+        <i class="fa-solid fa-laptop-code text-purple-400 text-xl"></i>
+        <span class="font-bold text-purple-200 text-sm">NTHU Portal 校務資訊系統登入</span>
+      </div>
 
-      <div id="notebook-card-slot" class="bg-purple-950/80 border-2 border-dashed border-purple-500/80 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-purple-900/90 transition-all mb-4" onclick="takeStudentIdFromNotebook()">
+      <div class="bg-purple-950/60 p-3 rounded border border-purple-800 text-xs text-purple-300 mb-4 space-y-1">
+        <p class="font-bold">>>> 系統鎖定提示：</p>
+        <p>• 帳號：學生證學號 (例如：112062114)</p>
+        <p>• 密碼組合：<strong class="text-amber-300">清大復校年份 (4位)</strong> + <strong class="text-cyan-300">當前館內時間 (4位 HHMM)</strong></p>
+        <p class="text-[10px] text-slate-400">目前館內時間：<span id="laptop-current-clock" class="text-purple-200 font-bold">22:00</span></p>
+      </div>
+
+      <div class="space-y-3 mb-4">
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">學號 (Student ID):</label>
+          <input type="text" id="laptop-student-id" placeholder="例如：112062114" class="w-full bg-slate-950 border border-purple-700 rounded px-3 py-2 text-xs text-purple-200 focus:outline-none focus:border-purple-400">
+        </div>
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">密碼 (Password):</label>
+          <input type="password" id="laptop-password" placeholder="例如：19562200" class="w-full bg-slate-950 border border-purple-700 rounded px-3 py-2 text-xs text-purple-200 focus:outline-none focus:border-purple-400">
+        </div>
+      </div>
+
+      <div class="flex space-x-2">
+        <button onclick="closeModal('modal-laptop-login')" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs">取消</button>
+        <button onclick="submitLaptopLogin()" class="flex-1 py-2 bg-purple-700 hover:bg-purple-600 text-white font-bold rounded text-xs shadow">登入驗證</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Laptop Clue Result Modal -->
+  <div id="modal-laptop-clue" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border-2 border-purple-500 rounded-xl p-6 w-full max-w-md shadow-2xl text-center animate-fade-in relative">
+      <button onclick="closeModal('modal-laptop-clue')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      
+      <div class="w-12 h-12 bg-purple-950 border border-purple-500 rounded-full mx-auto flex items-center justify-center text-2xl text-purple-300 mb-2">
+        <i class="fa-solid fa-laptop-code"></i>
+      </div>
+      <h3 class="text-base font-bold text-purple-200 mb-1">NTHU Portal 認證成功</h3>
+      <p class="text-xs text-slate-400 mb-4">系統已檢索出特藏區圖書架權限資料：</p>
+
+      <div class="bg-slate-950 p-4 rounded-xl border border-purple-800/80 mb-4 shadow-inner">
+        <div class="text-xs text-slate-400 mb-2 font-mono">【3F 特藏區彩虹書脊連動順序】</div>
+        <div class="text-lg font-bold space-x-2 font-mono flex justify-center items-center">
+          <span class="text-blue-400">藍</span> ➔
+          <span class="text-amber-400">黃</span> ➔
+          <span class="text-emerald-400">綠</span> ➔
+          <span class="text-red-400">紅</span>
+        </div>
+      </div>
+
+      <button onclick="closeModal('modal-laptop-clue')" class="w-full py-2 bg-purple-700 hover:bg-purple-600 text-white rounded font-bold text-xs">關閉視窗</button>
+    </div>
+  </div>
+
+  <!-- Notebook Modal -->
+  <div id="modal-notebook-view" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border-2 border-cyan-600 rounded-xl p-6 w-full max-w-md shadow-2xl text-center animate-fade-in relative">
+      <button onclick="closeModal('modal-notebook-view')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+
+      <h3 class="text-base font-bold text-cyan-300 mb-2">《微積分與演算法筆記》</h3>
+      <p class="text-xs text-slate-300 leading-relaxed mb-4 text-left bg-slate-950 p-3 rounded border border-slate-800">
+        裡面寫滿了微積分公式與演算法筆記...夾層中好像有一張卡片！
+      </p>
+
+      <div id="notebook-card-slot" class="bg-purple-950/80 border-2 border-dashed border-purple-500/80 rounded-xl p-4 mb-4 flex items-center justify-between cursor-pointer hover:bg-purple-900/80 transition-colors" onclick="takeStudentIdFromNotebook()">
         <div class="flex items-center space-x-3">
-          <div class="w-10 h-10 rounded-lg bg-purple-900 border border-purple-400 flex items-center justify-center text-purple-300 text-xl">
-            <i class="fa-solid fa-id-card"></i>
-          </div>
+          <i class="fa-solid fa-id-card text-3xl text-purple-400"></i>
           <div class="text-left">
-            <div class="text-xs text-purple-200 font-bold">夾層中的 NTHU 學生證</div>
-            <div id="notebook-card-status" class="text-[10px] text-amber-300">學號：112062114 (點擊拿取)</div>
+            <div class="text-xs font-bold text-purple-200">清華大學學生證 (NTHU Student ID)</div>
+            <div class="text-[10px] text-purple-300/80">學號：112062114</div>
           </div>
         </div>
-        <button id="btn-take-id" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold shadow">點擊拿取學生證</button>
+        <span class="text-xs bg-purple-700 hover:bg-purple-600 text-white font-bold px-3 py-1.5 rounded-lg shadow">點擊收取</span>
       </div>
 
-      <button onclick="closeModal('modal-notebook-view')" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-bold">關閉筆記本</button>
+      <button onclick="closeModal('modal-notebook-view')" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs">合上筆記本</button>
     </div>
   </div>
 
-  <!-- NTHU History Book Inspection Modal -->
+  <!-- NTHU History Book Modal -->
   <div id="modal-nthu-history" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border-2 border-purple-600 rounded-xl p-6 w-full max-w-md shadow-2xl text-center animate-fade-in relative">
       <button onclick="closeModal('modal-nthu-history')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -490,346 +718,344 @@
       <div class="bg-slate-950 p-4 rounded-lg border border-purple-900/60 text-xs text-slate-300 space-y-2 text-left leading-relaxed mb-4">
         <p>📖 國立清華大學於 <span class="text-amber-300 font-bold">1911</span> 年在北京建校。</p>
         <p>🏛️ 隨後於 <span class="text-amber-300 font-bold">1956</span> 年在台灣新竹正式復校，校訓為「自強不息，厚德載物」。</p>
-        <p class="text-purple-300 border-t border-slate-800 pt-2">【門禁安全註記】旺宏館電子管制系統 PIN 預設為清大在台復校年份（4位數）。</p>
       </div>
 
       <button onclick="closeModal('modal-nthu-history')" class="w-full py-2 bg-purple-700 hover:bg-purple-600 text-white rounded font-bold text-xs">我知道了</button>
     </div>
   </div>
 
-  <!-- Laptop Login Modal -->
-  <div id="modal-laptop-login" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border-2 border-purple-600 rounded-xl p-6 w-full max-w-sm shadow-2xl animate-fade-in">
-      <h3 class="text-base font-bold text-purple-200 mb-2 flex items-center gap-2">
-        <i class="fa-solid fa-laptop-code"></i> NTHU Portal 認證登入
-      </h3>
-      
-      <div class="bg-slate-950 p-3 rounded border border-purple-900/60 text-xs text-slate-300 space-y-1 mb-4">
-        <p class="text-purple-300 font-bold">>>> 系統鎖定提示：</p>
-        <p>• 帳號：學生證學號</p>
-        <p>• 密碼組合：<strong class="text-amber-300">清大復校年份 (1956)</strong> + <strong class="text-cyan-300">當前館內時間 (4位 HHMM)</strong></p>
-        <p class="text-[10px] text-slate-400 mt-1">目前館內時間：<span id="laptop-modal-clock" class="text-cyan-300 font-mono font-bold">22:00</span></p>
-      </div>
-
-      <div class="space-y-3 mb-4">
-        <div>
-          <label class="text-xs text-slate-300 block mb-1">學號 (Student ID):</label>
-          <input type="text" id="laptop-account-input" placeholder="例如：112062114" class="w-full bg-slate-950 border border-purple-700 rounded px-3 py-2 text-xs text-purple-200 focus:outline-none">
-        </div>
-        <div>
-          <label class="text-xs text-slate-300 block mb-1">密碼 (Password):</label>
-          <input type="password" id="laptop-pass-input" placeholder="例如：19562200" class="w-full bg-slate-950 border border-purple-700 rounded px-3 py-2 text-xs text-purple-200 focus:outline-none">
-        </div>
-      </div>
-
-      <div class="flex space-x-2">
-        <button onclick="closeModal('modal-laptop-login')" class="flex-1 py-2 bg-slate-800 text-slate-300 rounded text-xs">取消</button>
-        <button onclick="submitLaptopLogin()" class="flex-1 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded text-xs shadow">登入驗證</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Laptop Clue Result Modal -->
-  <div id="modal-laptop-clue" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border-2 border-purple-500 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in relative">
-      <button onclick="closeModal('modal-laptop-clue')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
-      
-      <div class="w-12 h-12 bg-purple-950 border border-purple-400 rounded-full mx-auto flex items-center justify-center text-2xl text-purple-300 mb-2">
-        <i class="fa-solid fa-laptop-code"></i>
-      </div>
-      <h3 class="text-base font-bold text-purple-200 mb-1">NTHU Portal 認證成功</h3>
-      <p class="text-xs text-slate-400 mb-4">系統已檢索出特藏區書架權限資料：</p>
-
-      <div class="bg-slate-950 p-4 rounded-lg border border-purple-900/80 mb-4">
-        <div class="text-xs text-slate-300 mb-2 font-medium">【3F 特藏區彩虹書脊連動順序】</div>
-        <div class="text-lg font-bold flex justify-center items-center gap-2">
-          <span class="text-blue-400">藍</span>
-          <span class="text-slate-500">➔</span>
-          <span class="text-amber-400">黃</span>
-          <span class="text-slate-500">➔</span>
-          <span class="text-emerald-400">綠</span>
-          <span class="text-slate-500">➔</span>
-          <span class="text-red-400">紅</span>
-        </div>
-      </div>
-
-      <button onclick="closeModal('modal-laptop-clue')" class="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white rounded font-bold text-xs">關閉視窗</button>
-    </div>
-  </div>
-
   <!-- Compass Cabinet Modal -->
   <div id="modal-compass-cabinet" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border-2 border-amber-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in">
+    <div class="bg-slate-900 border-2 border-amber-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in relative">
+      <button onclick="closeModal('modal-compass-cabinet')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      
       <h3 class="text-base font-bold text-amber-300 mb-1">梅園方位羅盤展示櫃</h3>
-      <p class="text-xs text-slate-400 mb-3">依據【圖書館館藏地圖】上記錄的梅園方位順序點擊</p>
+      <p class="text-xs text-slate-400 mb-3">依據地圖標註順序依次點擊四個方位</p>
 
-      <div class="bg-slate-950 p-2 rounded border border-amber-900/50 mb-4 h-10 flex items-center justify-center font-mono text-sm text-amber-400 font-bold">
-        <span id="compass-entered-seq">點擊方位按鈕...</span>
+      <div id="compass-seq-display" class="bg-slate-950 border border-amber-500/80 rounded py-2 mb-4 font-mono text-xs text-amber-300 h-8 flex items-center justify-center">
+        等待輸入方位...
       </div>
 
       <div class="grid grid-cols-3 gap-2 max-w-[200px] mx-auto mb-4">
         <div></div>
-        <button onclick="pressCompassDir('北')" class="py-2 bg-slate-800 hover:bg-amber-900/60 text-amber-200 rounded font-bold text-xs">北</button>
+        <button onclick="pressCompass('北')" class="py-2 bg-amber-900/80 hover:bg-amber-800 text-amber-200 font-bold rounded text-xs">北</button>
         <div></div>
-        <button onclick="pressCompassDir('西')" class="py-2 bg-slate-800 hover:bg-amber-900/60 text-amber-200 rounded font-bold text-xs">西</button>
-        <div class="w-full h-full flex items-center justify-center text-amber-500"><i class="fa-solid fa-compass"></i></div>
-        <button onclick="pressCompassDir('東')" class="py-2 bg-slate-800 hover:bg-amber-900/60 text-amber-200 rounded font-bold text-xs">東</button>
+        <button onclick="pressCompass('西')" class="py-2 bg-amber-900/80 hover:bg-amber-800 text-amber-200 font-bold rounded text-xs">西</button>
+        <div class="flex items-center justify-center"><i class="fa-solid fa-compass text-2xl text-amber-500"></i></div>
+        <button onclick="pressCompass('東')" class="py-2 bg-amber-900/80 hover:bg-amber-800 text-amber-200 font-bold rounded text-xs">東</button>
         <div></div>
-        <button onclick="pressCompassDir('南')" class="py-2 bg-slate-800 hover:bg-amber-900/60 text-amber-200 rounded font-bold text-xs">南</button>
+        <button onclick="pressCompass('南')" class="py-2 bg-amber-900/80 hover:bg-amber-800 text-amber-200 font-bold rounded text-xs">南</button>
         <div></div>
       </div>
 
       <div class="flex space-x-2">
-        <button onclick="clearCompassSeq()" class="py-1.5 px-3 bg-slate-800 text-slate-400 rounded text-xs">重設</button>
-        <button onclick="closeModal('modal-compass-cabinet')" class="flex-1 py-1.5 bg-slate-800 text-slate-300 rounded text-xs">關閉</button>
+        <button onclick="clearCompassSeq()" class="flex-1 py-1.5 bg-red-900/60 hover:bg-red-800 text-red-200 rounded text-xs">重置</button>
+        <button onclick="closeModal('modal-compass-cabinet')" class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs">離開</button>
       </div>
     </div>
   </div>
 
   <!-- Hydrant Direction Lock Modal -->
   <div id="modal-hydrant-lock" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border-2 border-red-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in">
-      <h3 class="text-base font-bold text-red-400 mb-1">3F 消防栓十字方向鎖</h3>
-      <p class="text-xs text-slate-400 mb-3">請輸入讀書桌前隔板用 UV 燈照射出之方向密碼</p>
+    <div class="bg-slate-900 border-2 border-red-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in relative">
+      <button onclick="closeModal('modal-hydrant-lock')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
 
-      <div class="bg-slate-950 p-2 rounded border border-red-900/50 mb-4 h-10 flex items-center justify-center font-mono text-base text-red-400 font-bold">
-        <span id="hydrant-entered-seq">點擊方向箭頭...</span>
+      <h3 class="text-base font-bold text-red-400 mb-1">3F 消防栓箱 - 十字方向鎖</h3>
+      <p class="text-xs text-slate-400 mb-3">輸入 4 位方向暗碼（需用紫光燈照射讀書桌前隔板）</p>
+
+      <div id="hydrant-seq-display" class="bg-slate-950 border border-red-500/80 rounded py-2 mb-4 font-mono text-base text-red-400 h-10 flex items-center justify-center font-bold tracking-widest">
+        ----
       </div>
 
-      <div class="grid grid-cols-3 gap-2 max-w-[200px] mx-auto mb-4">
+      <div class="grid grid-cols-3 gap-2 max-w-[180px] mx-auto mb-4">
         <div></div>
-        <button onclick="pressHydrantDirection('↑')" class="py-2 bg-slate-800 hover:bg-red-900/60 text-red-200 rounded font-bold text-sm">↑</button>
+        <button onclick="pressHydrantDirection('↑')" class="py-2.5 bg-red-900/80 hover:bg-red-800 text-white font-bold rounded text-base">↑</button>
         <div></div>
-        <button onclick="pressHydrantDirection('←')" class="py-2 bg-slate-800 hover:bg-red-900/60 text-red-200 rounded font-bold text-sm">←</button>
-        <div class="w-full h-full flex items-center justify-center text-red-500"><i class="fa-solid fa-lock"></i></div>
-        <button onclick="pressHydrantDirection('→')" class="py-2 bg-slate-800 hover:bg-red-900/60 text-red-200 rounded font-bold text-sm">→</button>
+        <button onclick="pressHydrantDirection('←')" class="py-2.5 bg-red-900/80 hover:bg-red-800 text-white font-bold rounded text-base">←</button>
+        <div class="flex items-center justify-center"><i class="fa-solid fa-lock text-red-500 text-lg"></i></div>
+        <button onclick="pressHydrantDirection('→')" class="py-2.5 bg-red-900/80 hover:bg-red-800 text-white font-bold rounded text-base">→</button>
         <div></div>
-        <button onclick="pressHydrantDirection('↓')" class="py-2 bg-slate-800 hover:bg-red-900/60 text-red-200 rounded font-bold text-sm">↓</button>
+        <button onclick="pressHydrantDirection('↓')" class="py-2.5 bg-red-900/80 hover:bg-red-800 text-white font-bold rounded text-base">↓</button>
         <div></div>
       </div>
 
       <div class="flex space-x-2">
-        <button onclick="clearHydrantSeq()" class="py-1.5 px-3 bg-slate-800 text-slate-400 rounded text-xs">重設</button>
-        <button onclick="closeModal('modal-hydrant-lock')" class="flex-1 py-1.5 bg-slate-800 text-slate-300 rounded text-xs">關閉</button>
+        <button onclick="clearHydrantSeq()" class="flex-1 py-1.5 bg-red-900/60 hover:bg-red-800 text-red-200 rounded text-xs">清除</button>
+        <button onclick="closeModal('modal-hydrant-lock')" class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs">關閉</button>
       </div>
     </div>
   </div>
 
   <!-- Barcode Scanner Modal -->
   <div id="modal-barcode-scanner" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border-2 border-purple-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in">
-      <i class="fa-solid fa-barcode text-4xl text-purple-400 mb-2"></i>
-      <h3 class="text-base font-bold text-purple-200 mb-1">自助借還書機 - 條碼掃描區</h3>
-      <p class="text-xs text-slate-400 mb-4">請在物品欄點擊選取《梅竹歷史特刊》後放入掃描</p>
+    <div class="bg-slate-900 border-2 border-purple-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in relative">
+      <button onclick="closeModal('modal-barcode-scanner')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
 
-      <button onclick="scanSelectedBook()" class="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg text-xs shadow mb-3">
-        放上選取的圖書進行掃描
-      </button>
-      <button onclick="closeModal('modal-barcode-scanner')" class="w-full py-2 bg-slate-800 text-slate-300 rounded text-xs">離開設備</button>
+      <h3 class="text-base font-bold text-purple-300 mb-2">自助借還書條碼掃描機</h3>
+      <p class="text-xs text-slate-400 mb-4">請在物品欄選取《梅竹歷史特刊》後點擊下方掃描</p>
+
+      <div class="bg-slate-950 p-4 rounded-xl border border-purple-900/60 mb-4">
+        <i class="fa-solid fa-barcode text-5xl text-purple-400 mb-2"></i>
+        <div id="scanner-status" class="text-xs text-slate-400">狀態：等待放入書籍條碼...</div>
+      </div>
+
+      <button onclick="scanSelectedBook()" class="w-full py-2 bg-purple-700 hover:bg-purple-600 text-white font-bold rounded text-xs shadow">掃描選取書籍</button>
     </div>
   </div>
 
-  <!-- Director Room Klotski Puzzle Modal -->
+  <!-- Director Room Klotski Emblem Puzzle Modal -->
   <div id="modal-director-circuit" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border-2 border-purple-600 rounded-2xl p-6 w-full max-w-md shadow-2xl text-center animate-fade-in flex flex-col items-center">
-      <div class="flex justify-between items-center w-full border-b border-purple-800 pb-2 mb-3">
-        <h3 class="text-base font-bold text-purple-200 flex items-center gap-2">
-          <i class="fa-solid fa-graduation-cap"></i> 館長控制室 - 校徽拼圖控制盤
-        </h3>
-        <button onclick="closeModal('modal-director-circuit')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+    <div class="bg-slate-900 border-2 border-purple-600 rounded-2xl p-6 w-full max-w-md shadow-2xl text-center animate-fade-in relative">
+      <button onclick="closeModal('modal-director-circuit')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+
+      <div class="flex items-center justify-center space-x-2 mb-1">
+        <i class="fa-solid fa-graduation-cap text-purple-400"></i>
+        <h3 class="text-base font-bold text-purple-200">館長控制室 - 電源開關</h3>
+      </div>
+      <p class="text-xs text-slate-400 mb-3">校徽 3x3 拼圖控制盤（復原校徽圖案以接通正門電源）</p>
+
+      <div class="flex justify-center mb-3">
+        <div class="puzzle-container">
+          <div id="klotski-board" class="puzzle-board">
+            <!-- Dynamic 3x3 Sliding Puzzle Tiles -->
+          </div>
+        </div>
       </div>
 
-      <p class="text-xs text-slate-400 mb-3">點擊空格相鄰圖塊滑動，復原清華大學校徽接通電源</p>
+      <div class="flex items-center justify-between text-xs font-mono text-slate-400 mb-3 px-2">
+        <span>移動步數：<strong id="klotski-moves" class="text-purple-300">0</strong></span>
+        <span id="circuit-status-msg" class="text-red-400 font-bold">狀態：斷電中</span>
+      </div>
 
-      <!-- Klotski Board -->
-      <div class="w-64 h-64 puzzle-board mb-4" id="klotski-board"></div>
-
-      <div id="circuit-status-msg" class="text-xs font-bold text-amber-400 mb-3">閘門電源狀態：未導通</div>
-
-      <div class="flex space-x-3 w-full">
-        <button onclick="resetKlotskiPuzzle()" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs">重新洗牌</button>
-        <button onclick="closeModal('modal-director-circuit')" class="flex-1 py-2 bg-purple-700 hover:bg-purple-600 text-white font-bold rounded text-xs">離開控制盤</button>
+      <div class="flex space-x-2">
+        <button onclick="resetKlotskiPuzzle()" class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs">重新洗牌</button>
+        <button onclick="closeModal('modal-director-circuit')" class="flex-1 py-1.5 bg-purple-800 hover:bg-purple-700 text-white rounded text-xs">離開控制盤</button>
       </div>
     </div>
   </div>
 
   <!-- Main Gate Override Keypad Modal -->
   <div id="modal-gate-keypad" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border-2 border-emerald-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in">
+    <div class="bg-slate-900 border-2 border-emerald-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in relative">
+      <button onclick="closeModal('modal-gate-keypad')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
       <h3 class="text-base font-bold text-emerald-300 mb-1">旺宏館正門 - 防盜管制閘門</h3>
-      <p class="text-xs text-slate-400 mb-3">需要電源導通 + 裝載晶片 + 輸入復校年份 PIN (1956)</p>
+      <p class="text-xs text-slate-400 mb-3">需要電源導通 + 裝載晶片 + 輸入特刊標示之 PIN 碼 (1911)</p>
 
       <div id="gate-pin-display" class="bg-slate-950 border border-emerald-500/80 rounded py-2 mb-4 font-mono text-2xl text-emerald-400 font-bold tracking-widest h-12 flex items-center justify-center shadow-inner">
         ----
       </div>
 
       <div class="grid grid-cols-3 gap-2 mb-4">
-        <button onclick="pressGateKey('1')" class="py-2 bg-slate-800 text-white font-mono rounded font-bold text-base">1</button>
-        <button onclick="pressGateKey('2')" class="py-2 bg-slate-800 text-white font-mono rounded font-bold text-base">2</button>
-        <button onclick="pressGateKey('3')" class="py-2 bg-slate-800 text-white font-mono rounded font-bold text-base">3</button>
-        <button onclick="pressGateKey('4')" class="py-2 bg-slate-800 text-white font-mono rounded font-bold text-base">4</button>
-        <button onclick="pressGateKey('5')" class="py-2 bg-slate-800 text-white font-mono rounded font-bold text-base">5</button>
-        <button onclick="pressGateKey('6')" class="py-2 bg-slate-800 text-white font-mono rounded font-bold text-base">6</button>
-        <button onclick="pressGateKey('7')" class="py-2 bg-slate-800 text-white font-mono rounded font-bold text-base">7</button>
-        <button onclick="pressGateKey('8')" class="py-2 bg-slate-800 text-white font-mono rounded font-bold text-base">8</button>
-        <button onclick="pressGateKey('9')" class="py-2 bg-slate-800 text-white font-mono rounded font-bold text-base">9</button>
-        <button onclick="clearGatePin()" class="py-2 bg-red-900/60 text-red-200 font-mono rounded text-xs">清除</button>
-        <button onclick="pressGateKey('0')" class="py-2 bg-slate-800 text-white font-mono rounded font-bold text-base">0</button>
-        <button onclick="submitGateUnlock()" class="py-2 bg-emerald-600 text-slate-950 font-mono rounded font-bold text-xs">解鎖</button>
+        <button onclick="pressGateKey('1')" class="py-2 bg-slate-800 hover:bg-slate-700 text-white font-mono rounded font-bold text-lg">1</button>
+        <button onclick="pressGateKey('2')" class="py-2 bg-slate-800 hover:bg-slate-700 text-white font-mono rounded font-bold text-lg">2</button>
+        <button onclick="pressGateKey('3')" class="py-2 bg-slate-800 hover:bg-slate-700 text-white font-mono rounded font-bold text-lg">3</button>
+        <button onclick="pressGateKey('4')" class="py-2 bg-slate-800 hover:bg-slate-700 text-white font-mono rounded font-bold text-lg">4</button>
+        <button onclick="pressGateKey('5')" class="py-2 bg-slate-800 hover:bg-slate-700 text-white font-mono rounded font-bold text-lg">5</button>
+        <button onclick="pressGateKey('6')" class="py-2 bg-slate-800 hover:bg-slate-700 text-white font-mono rounded font-bold text-lg">6</button>
+        <button onclick="pressGateKey('7')" class="py-2 bg-slate-800 hover:bg-slate-700 text-white font-mono rounded font-bold text-lg">7</button>
+        <button onclick="pressGateKey('8')" class="py-2 bg-slate-800 hover:bg-slate-700 text-white font-mono rounded font-bold text-lg">8</button>
+        <button onclick="pressGateKey('9')" class="py-2 bg-slate-800 hover:bg-slate-700 text-white font-mono rounded font-bold text-lg">9</button>
+        <button onclick="clearGatePin()" class="py-2 bg-red-900/60 hover:bg-red-800 text-red-200 font-mono rounded text-xs">清除</button>
+        <button onclick="pressGateKey('0')" class="py-2 bg-slate-800 hover:bg-slate-700 text-white font-mono rounded font-bold text-lg">0</button>
+        <button onclick="submitGateUnlock()" class="py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-mono rounded font-bold text-sm">解鎖</button>
       </div>
 
-      <button onclick="closeModal('modal-gate-keypad')" class="w-full py-2 bg-slate-800 text-slate-300 rounded text-xs">離開面板</button>
+      <button onclick="closeModal('modal-gate-keypad')" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-sm">離開面板</button>
     </div>
   </div>
 
-  <!-- Stairwell Alarm Choice Modal -->
-  <div id="modal-stairwell-alarm" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border-2 border-red-600 rounded-xl p-6 w-full max-w-sm shadow-2xl text-center animate-fade-in">
-      <div class="w-12 h-12 rounded-full bg-red-900/80 border border-red-500 flex items-center justify-center mx-auto text-2xl text-red-400 mb-2 animate-bounce">
-        <i class="fa-solid fa-bell"></i>
-      </div>
-      <h3 class="text-base font-bold text-red-400 mb-1">⚠️ 警報響起！樓梯間防火門</h3>
-      <p class="text-xs text-slate-300 mb-4">推開此門將觸發警報，且門後防盜鎖會將你反鎖在樓梯間內！</p>
-
-      <div class="space-y-2">
-        <button onclick="stairwellChoiceReturn()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold border border-slate-700">
-          安全返回圖書館（解除警報）
-        </button>
-        <button onclick="stairwellChoiceEnter()" class="w-full py-2.5 bg-red-700 hover:bg-red-600 text-white rounded-lg text-xs font-bold shadow">
-          推門進入樓梯間（將被反鎖受困）
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Item Inspect Modal -->
+  <!-- Item Detail Inspection Modal -->
   <div id="modal-item-inspect" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border-2 border-slate-700 rounded-xl p-6 w-full max-w-md shadow-2xl text-center animate-fade-in relative">
       <button onclick="closeModal('modal-item-inspect')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+
       <div id="inspect-icon-container" class="w-20 h-20 bg-slate-950 border border-slate-700 rounded-full mx-auto flex items-center justify-center text-3xl mb-3 shadow-inner"></div>
       <h3 id="inspect-title" class="text-base font-bold text-amber-300 mb-1">物品名稱</h3>
       <p id="inspect-description" class="text-xs text-slate-300 mb-4 leading-relaxed">物品詳細說明...</p>
-      <div id="inspect-extra-action"></div>
+      <div id="inspect-extra-action" class="mt-2"></div>
     </div>
   </div>
 
-  <!-- Help Modal -->
+  <!-- Stairwell Alarm Modal -->
+  <div id="modal-stairwell-alarm" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border-2 border-red-600 rounded-2xl p-6 w-full max-w-md shadow-2xl text-center animate-fade-in">
+      <div class="w-16 h-16 bg-red-950 border-2 border-red-500 rounded-full mx-auto flex items-center justify-center text-3xl text-red-500 mb-3 animate-ping">
+        <i class="fa-solid fa-bell"></i>
+      </div>
+      <h3 class="text-lg font-bold text-red-400 mb-1">⚠️ 警報響起！蜂鳴警報器已啟動</h3>
+      <p class="text-xs text-slate-300 mb-4 leading-relaxed">
+        你推開了樓梯間防火門，強烈的警報蜂鳴聲響徹走廊！請立刻選擇：
+      </p>
+
+      <div class="space-y-3">
+        <button onclick="stairwellChoiceReturn()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center justify-center gap-2">
+          <i class="fa-solid fa-rotate-left"></i> 選項 1：退回圖書館大廳（解除警報）
+        </button>
+        <button onclick="stairwellChoiceEnter()" class="w-full py-2.5 bg-red-700 hover:bg-red-600 text-white text-xs font-bold rounded-xl shadow-lg flex items-center justify-center gap-2">
+          <i class="fa-solid fa-person-walking-arrow-right"></i> 選項 2：硬著頭皮進到樓梯間（防火門自動反鎖！）
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help / Info Modal -->
   <div id="modal-help" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-md shadow-2xl">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-md shadow-2xl relative">
+      <button onclick="closeModal('modal-help')" class="absolute top-3 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
       <h3 class="text-base font-bold text-amber-300 mb-2 flex items-center gap-2">
-        <i class="fa-solid fa-circle-info"></i> 遊戲玩法說明
+        <i class="fa-solid fa-circle-info"></i> 遊戲說明與通關提示
       </h3>
       <ul class="text-xs text-slate-300 space-y-2 list-disc list-inside leading-relaxed mb-4">
-        <li>點擊場景中的物件進行調查與互動。</li>
-        <li>取得道具會顯示在畫面下方物品欄，可雙擊開啟詳細檢視。</li>
-        <li>筆電密碼為「清大復校年份 1956 + 當前館內時間（4位數）」；大門 PIN 碼為 1956。</li>
+        <li>點擊場景中的物件進行探索。取得的物品會顯示在畫面下方的<strong>物品欄</strong>。</li>
+        <li><strong>筆記型電腦</strong>：帳號為學生證學號 (112062114)，密碼為清大復校年份 (1956) + 館內時間 (HHMM)。</li>
+        <li><strong>特藏彩虹書架</strong>：根據筆電線索輸入 (藍➔黃➔綠➔紅) 可獲得館藏地圖。</li>
+        <li><strong>梅園羅盤</strong>：依照地圖標註順序 (東➔南➔西➔北) 點擊可取得《梅竹歷史特刊》。</li>
+        <li><strong>UV 紫光手電筒</strong>：照射讀書桌前隔板可顯示消防栓暗碼 (↑↓←→)。</li>
+        <li><strong>館長控制室</strong>：右上角進入完成校徽 3x3 滑動拼圖可接通正門電源。</li>
       </ul>
-      <button onclick="closeModal('modal-help')" class="w-full py-2 bg-slate-800 text-slate-200 rounded font-bold text-xs">我知道了</button>
+      <button onclick="closeModal('modal-help')" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded font-bold text-xs">我知道了</button>
     </div>
   </div>
 
   <!-- Victory Modal -->
   <div id="modal-victory" class="fixed inset-0 bg-black/95 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border-2 border-emerald-500 rounded-2xl p-8 w-full max-w-lg text-center shadow-2xl animate-fade-in">
-      <div class="w-20 h-20 bg-emerald-900/50 border-2 border-emerald-400 rounded-full mx-auto flex items-center justify-center text-4xl text-emerald-400 mb-4 animate-bounce">
+    <div class="bg-slate-900 border-2 border-emerald-500 rounded-2xl p-6 md:p-8 w-full max-w-lg text-center shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+      <div class="w-16 h-16 bg-emerald-900/50 border-2 border-emerald-400 rounded-full mx-auto flex items-center justify-center text-3xl text-emerald-400 mb-3 animate-bounce">
         <i class="fa-solid fa-door-open"></i>
       </div>
-      <h2 class="text-2xl font-black text-emerald-300 mb-2">成功逃出清華旺宏館！</h2>
-      <p class="text-xs text-slate-300 mb-6 leading-relaxed">
-        你順利完成了所有謎題，復原了館長控制室的清華校徽，並輸入了清大在台復校年份 <span class="text-amber-300 font-bold">1956</span>，順利開啟正門逃脫！
+      <h2 class="text-xl md:text-2xl font-black text-emerald-300 mb-1">成功逃出清華旺宏館！</h2>
+      <p class="text-xs text-slate-300 mb-4 leading-relaxed">
+        你順利完成了所有謎題，復原了館長控制室的清華校徽，並輸入了《梅竹歷史特刊》封底標記的 PIN 碼 <span class="text-amber-300 font-bold">1911</span>，順利開啟正門逃脫！
       </p>
-      <button onclick="location.reload()" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-slate-950 font-extrabold text-sm rounded-xl shadow-lg">
+
+      <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 mb-4 grid grid-cols-2 gap-3 text-left font-mono">
+        <div>
+          <div class="text-[10px] text-slate-500">總耗時 (Escape Time):</div>
+          <div id="victory-time" class="text-base text-amber-400 font-bold">00:00</div>
+        </div>
+        <div>
+          <div class="text-[10px] text-slate-500">獲得稱號 (Title):</div>
+          <div class="text-xs text-emerald-300 font-bold mt-0.5">旺宏館解謎學霸 🎓</div>
+        </div>
+      </div>
+
+      <div id="leaderboard-submit-area" class="bg-slate-950/80 border border-purple-800/60 rounded-xl p-3 mb-4 text-left">
+        <label class="block text-xs font-bold text-purple-300 mb-1">登錄通關紀錄英雄榜：</label>
+        <div class="flex gap-2">
+          <input type="text" id="player-name-input" placeholder="請輸入您的姓名 / 暱稱" maxlength="15" class="flex-1 bg-slate-900 border border-purple-700/80 rounded px-3 py-1.5 text-xs text-purple-200 focus:outline-none focus:border-purple-400">
+          <button onclick="submitLeaderboardEntry()" class="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs px-3 py-1.5 rounded shadow">提交</button>
+        </div>
+      </div>
+
+      <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 mb-4 text-left">
+        <div class="flex justify-between items-center border-b border-slate-800 pb-1.5 mb-2">
+          <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5"><i class="fa-solid fa-trophy"></i> 逃脫英雄榜 (Top Escapees)</span>
+          <span class="text-[10px] text-slate-500">即時雲端連線</span>
+        </div>
+        <div id="leaderboard-list" class="space-y-1.5 max-h-36 overflow-y-auto text-xs font-mono">
+          <p class="text-slate-500 text-center py-2 text-[11px]">正在載入英雄榜...</p>
+        </div>
+      </div>
+
+      <button onclick="location.reload()" class="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-slate-950 font-extrabold text-sm rounded-xl shadow-lg transition-transform hover:scale-105">
         再玩一次 (Restart Game)
       </button>
     </div>
   </div>
 
-  <!-- JAVASCRIPT -->
+  <!-- JAVASCRIPT GAME LOGIC -->
   <script>
     /* GAME STATE */
     const gameState = {
       currentScene: 'desk',
       timerSeconds: 0,
       timerInterval: null,
+      clockMins: 22 * 60, // Starts at 22:00
       soundEnabled: true,
-      
-      inGameTimeMinutes: 22 * 60, // 22:00
       
       inventory: [],
       selectedItemId: null,
 
       drawerUnlocked: false,
-      hasStudentId: false,
       laptopLoggedIn: false,
+      hasStudentId: false,
+
       colorBookSequence: [],
       correctColorSequence: ['blue', 'yellow', 'green', 'red'],
-      bookshelfUnlocked: false,
-      hasMap: false,
-      compassEnteredSeq: [],
+      colorBooksUnlocked: false,
+
+      compassSeq: [],
       correctCompassSeq: ['東', '南', '西', '北'],
       compassUnlocked: false,
-      hasMeichuBook: false,
+
       flashlightActive: false,
-      hydrantEnteredSeq: [],
+      hydrantSeq: [],
       correctHydrantSeq: ['↑', '↓', '←', '→'],
       hydrantUnlocked: false,
       hasFiredoorKey: false,
-      isTrappedInStairwell: false,
+
+      stairwellTrapped: false,
+      alarmSirenOsc: null,
+      visitedStairwell: false,
+      scannedMeichuBook: false,
       hasGateChip: false,
-      klotskiSolved: false,
-      gatePinEntered: ""
+
+      circuitSolved: false,
+      gatePinEntered: "",
+      
+      klotskiTiles: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+      klotskiMoves: 0
     };
 
-    /* Items DB */
+    /* ITEM MASTER DATABASE */
     const ITEMS_DB = {
       student_id: {
         id: 'student_id',
         name: '清華學生證',
         icon: 'fa-id-card',
         iconColor: 'text-purple-400',
-        description: '你的 NTHU 學生證，上面印著學號：112062114。'
+        description: '你的 NTHU 學生證，上面印著學號：112062114。可用於筆記型電腦 Portal 登入驗證。'
       },
       uv_flashlight: {
         id: 'uv_flashlight',
         name: 'UV 紫光手電筒',
-        icon: 'fa-lightbulb',
+        icon: 'fa-bolt',
         iconColor: 'text-amber-400',
-        description: '能發出紫光的特殊手電筒。可用於照射暗處壁面顯示隱藏線索。'
+        description: '一支從抽屜找到的高亮度 UV 手電筒。可以在物品欄點擊開啟紫光模式，照射隱蔽牆面顯影。'
       },
-      nthu_map: {
-        id: 'nthu_map',
+      library_map: {
+        id: 'library_map',
         name: '圖書館館藏地圖',
         icon: 'fa-map-location-dot',
-        iconColor: 'text-cyan-400',
-        description: '從特藏書架獲得的地圖，上面標註著梅園方位順序：【東 ➔ 南 ➔ 西 ➔ 北】。'
+        iconColor: 'text-amber-300',
+        description: '特藏書架獲得的地圖，邊緣記載著方位標註：『梅園方位線索：東 ➔ 南 ➔ 西 ➔ 北』。'
       },
       meichu_book: {
         id: 'meichu_book',
         name: '《梅竹歷史特刊》',
         icon: 'fa-book-atlas',
-        iconColor: 'text-purple-300',
-        description: '記載梅竹賽歷史的專刊，封底帶有清華圖書館條碼。'
+        iconColor: 'text-emerald-400',
+        description: '記載清華梅竹賽歷史的紀念特刊，封底條碼下方印有一行備註：『1F 防盜門密碼：1911』。'
       },
       firedoor_key: {
         id: 'firedoor_key',
         name: '備用防火門鑰匙',
         icon: 'fa-key',
-        iconColor: 'text-amber-300',
-        description: '從消防栓箱內取得的鑰匙，可用於解除樓梯間受困狀態。'
+        iconColor: 'text-red-400',
+        description: '解開 3F 消防栓箱獲得的鑰匙，可用於解除受困樓梯間的防火門反鎖。'
       },
       gate_chip: {
         id: 'gate_chip',
         name: '閘門感應晶片',
         icon: 'fa-microchip',
-        iconColor: 'text-emerald-400',
-        description: '掃描專刊獲得的晶片，配合 PIN 碼即可打開正門防盜閘門。'
+        iconColor: 'text-cyan-400',
+        description: '將《梅竹歷史特刊》掃描後獲得的 1F 正門感應晶片。'
       }
     };
 
-    /* Audio Synth */
+    /* AUDIO SYNTHESIZER */
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     let audioCtx = null;
-    let alarmOsc = null;
 
     function initAudio() {
       if (!audioCtx) audioCtx = new AudioContext();
@@ -840,67 +1066,37 @@
       initAudio();
       if (audioCtx.state === 'suspended') audioCtx.resume();
 
+      const now = audioCtx.currentTime;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-      const now = audioCtx.currentTime;
 
       if (type === 'click') {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(600, now);
         osc.frequency.exponentialRampToValueAtTime(200, now + 0.05);
-        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.setValueAtTime(0.2, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
         osc.start(now);
         osc.stop(now + 0.05);
-      } else if (type === 'success') {
+      } else if (type === 'success' || type === 'unlock') {
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(440, now);
-        osc.frequency.setValueAtTime(659.25, now + 0.15);
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.setValueAtTime(659.25, now + 0.1);
+        osc.frequency.setValueAtTime(783.99, now + 0.2);
         gain.gain.setValueAtTime(0.3, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
         osc.start(now);
-        osc.stop(now + 0.3);
+        osc.stop(now + 0.35);
       } else if (type === 'error') {
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(180, now);
+        osc.frequency.setValueAtTime(120, now + 0.1);
         gain.gain.setValueAtTime(0.3, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
         osc.start(now);
-        osc.stop(now + 0.2);
-      } else if (type === 'unlock') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(523.25, now);
-        osc.frequency.setValueAtTime(659.25, now + 0.1);
-        gain.gain.setValueAtTime(0.3, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-        osc.start(now);
-        osc.stop(now + 0.3);
-      }
-    }
-
-    function startAlarmSiren() {
-      if (!gameState.soundEnabled) return;
-      initAudio();
-      if (alarmOsc) return;
-
-      alarmOsc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      alarmOsc.type = 'sawtooth';
-      alarmOsc.frequency.setValueAtTime(800, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-
-      alarmOsc.connect(gain);
-      gain.connect(audioCtx.destination);
-      alarmOsc.start();
-    }
-
-    function stopAlarmSiren() {
-      if (alarmOsc) {
-        alarmOsc.stop();
-        alarmOsc.disconnect();
-        alarmOsc = null;
+        osc.stop(now + 0.25);
       }
     }
 
@@ -912,7 +1108,6 @@
         addStoryLog("【音效】音效已開啟。");
       } else {
         icon.className = "fa-solid fa-volume-xmark text-lg text-red-400";
-        stopAlarmSiren();
         addStoryLog("【音效】音效已靜音。");
       }
     }
@@ -923,15 +1118,8 @@
       renderInventory();
       setupFlashlight();
       initKlotskiPuzzle();
-      addStoryLog("你在旺宏館2F讀書區醒來，門已被閉館系統鎖定。");
+      addStoryLog("你在旺宏館 2F 閱覽區醒來，門已鎖定。請尋找線索逃出！");
     });
-
-    function getInGameTimeFormatted() {
-      const totalMins = gameState.inGameTimeMinutes % (24 * 60);
-      const hrs = Math.floor(totalMins / 60).toString().padStart(2, '0');
-      const mins = (totalMins % 60).toString().padStart(2, '0');
-      return { display: `${hrs}:${mins}`, code: `${hrs}${mins}` };
-    }
 
     function startTimer() {
       gameState.timerInterval = setInterval(() => {
@@ -941,17 +1129,30 @@
         document.getElementById('game-timer').innerText = `${mins}:${secs}`;
 
         if (gameState.timerSeconds % 10 === 0) {
-          gameState.inGameTimeMinutes++;
-          const timeObj = getInGameTimeFormatted();
-          document.getElementById('ingame-clock').innerText = timeObj.display;
-          const modalClock = document.getElementById('laptop-modal-clock');
-          if (modalClock) modalClock.innerText = timeObj.display;
+          gameState.clockMins++;
+          updateClockUI();
         }
       }, 1000);
     }
 
+    function updateClockUI() {
+      const hh = Math.floor((gameState.clockMins / 60) % 24).toString().padStart(2, '0');
+      const mm = (gameState.clockMins % 60).toString().padStart(2, '0');
+      const timeStr = `${hh}:${mm}`;
+      document.getElementById('in-game-clock').innerText = timeStr;
+      const laptopClock = document.getElementById('laptop-current-clock');
+      if (laptopClock) laptopClock.innerText = timeStr;
+    }
+
+    function getFormattedInGameClockDigits() {
+      const hh = Math.floor((gameState.clockMins / 60) % 24).toString().padStart(2, '0');
+      const mm = (gameState.clockMins % 60).toString().padStart(2, '0');
+      return `${hh}${mm}`;
+    }
+
     function addStoryLog(msg) {
       const log = document.getElementById('story-log');
+      if (!log) return;
       const p = document.createElement('p');
       p.className = 'mb-1 leading-normal animate-fade-in';
       p.innerHTML = msg;
@@ -960,21 +1161,21 @@
     }
 
     function clearStoryLog() {
-      document.getElementById('story-log').innerHTML = '';
+      const log = document.getElementById('story-log');
+      if (log) log.innerHTML = '';
       addStoryLog("探索紀錄已清除。");
     }
 
     /* SCENE SWITCHING */
     function switchScene(sceneId) {
-      if (gameState.isTrappedInStairwell && sceneId !== 'stairwell') {
-        playSound('error');
-        addStoryLog("❌ 門已反鎖！你目前受困於樓梯間，無法離開，需解開消防栓獲得鑰匙。");
+      playSound('click');
+
+      if (gameState.stairwellTrapped && sceneId !== 'stairwell') {
+        addStoryLog("<span class='text-red-400 font-bold'>【警告】防火門已反鎖！你受困於 3F 樓梯間，必須先解鎖消防栓取得鑰匙。</span>");
         return;
       }
 
-      playSound('click');
       gameState.currentScene = sceneId;
-
       document.querySelectorAll('.scene').forEach(el => {
         el.classList.add('hidden');
         el.classList.remove('flex');
@@ -982,12 +1183,11 @@
 
       const titles = {
         desk: "當前位置：2F 閱覽區 / 讀書桌",
-        bookshelves: "當前位置：3F 特藏區",
-        circulation: "當前位置：1F 流通櫃檯",
-        stairwell: "當前位置：3F 樓梯間 (受困)",
-        exit: "當前位置：1F 旺宏館正門大廳"
+        bookshelves: "當前位置：3F 特藏與理工圖書區",
+        circulation: "當前位置：1F 流通櫃檯與服務區",
+        exit: "當前位置：1F 旺宏館正門與館長控制室",
+        stairwell: "當前位置：3F 樓梯間 (受困)"
       };
-
       const titleEl = document.getElementById('scene-title');
       if (titleEl) titleEl.innerText = titles[sceneId] || "旺宏館";
 
@@ -1006,9 +1206,11 @@
         navBtn.classList.remove('text-slate-400');
         navBtn.classList.add('text-amber-400');
       }
+
+      addStoryLog(`移動到了【${(titles[sceneId] || '').split('：')[1] || sceneId}】`);
     }
 
-    /* INVENTORY */
+    /* INVENTORY SYSTEM */
     function addItem(itemId) {
       if (gameState.inventory.some(item => item.id === itemId)) return;
       const itemData = ITEMS_DB[itemId];
@@ -1035,20 +1237,19 @@
       grid.innerHTML = '';
 
       const minSlots = Math.max(5, gameState.inventory.length);
-
       for (let i = 0; i < minSlots; i++) {
         const slot = document.createElement('div');
         const item = gameState.inventory[i];
 
         if (item) {
           const isSelected = gameState.selectedItemId === item.id;
-          slot.className = `w-16 h-14 shrink-0 relative rounded-lg border-2 ${isSelected ? 'border-amber-400 bg-amber-950/40 glow-yellow' : 'border-slate-700 bg-slate-950'} flex items-center justify-center cursor-pointer transition-all`;
+          slot.className = `w-16 h-14 shrink-0 relative rounded-lg border-2 ${isSelected ? 'border-amber-400 bg-amber-950/40 glow-yellow' : 'border-slate-700 bg-slate-950'} flex flex-col items-center justify-center cursor-pointer transition-all hover:border-slate-500 p-1`;
           slot.onclick = () => selectItem(item.id);
           slot.ondblclick = () => inspectInventoryItem(item.id);
 
           slot.innerHTML = `
             <i class="fa-solid ${item.icon} text-xl ${item.iconColor}"></i>
-            <span class="absolute bottom-0.5 right-0.5 text-[7px] font-bold text-slate-400 truncate max-w-[90%]">${item.name}</span>
+            <span class="text-[8px] font-bold text-slate-300 truncate max-w-full mt-0.5">${item.name}</span>
           `;
         } else {
           slot.className = "w-16 h-14 shrink-0 rounded-lg border border-slate-800 bg-slate-950/40 flex items-center justify-center text-slate-700";
@@ -1085,18 +1286,9 @@
       if (itemId === 'uv_flashlight') {
         const btn = document.createElement('button');
         btn.className = "px-4 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold rounded text-xs shadow";
-        btn.innerText = gameState.flashlightActive ? "關閉紫光燈" : "開啟紫光燈";
+        btn.innerText = gameState.flashlightActive ? "關閉紫光模式" : "開啟紫光模式";
         btn.onclick = () => {
           toggleFlashlight();
-          closeModal('modal-item-inspect');
-        };
-        actionArea.appendChild(btn);
-      } else if (itemId === 'firedoor_key' && gameState.isTrappedInStairwell) {
-        const btn = document.createElement('button');
-        btn.className = "px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded text-xs shadow";
-        btn.innerText = "使用鑰匙解鎖防火門";
-        btn.onclick = () => {
-          useFiredoorKey();
           closeModal('modal-item-inspect');
         };
         actionArea.appendChild(btn);
@@ -1105,10 +1297,11 @@
       openModal('modal-item-inspect');
     }
 
+    /* FLASHLIGHT LOGIC */
     function setupFlashlight() {
       const layer = document.getElementById('flashlight-layer');
       window.addEventListener('mousemove', (e) => {
-        if (!gameState.flashlightActive) return;
+        if (!gameState.flashlightActive || !layer) return;
         layer.style.setProperty('--cursor-x', `${e.clientX}px`);
         layer.style.setProperty('--cursor-y', `${e.clientY}px`);
       });
@@ -1117,114 +1310,92 @@
     function toggleFlashlight() {
       gameState.flashlightActive = !gameState.flashlightActive;
       const layer = document.getElementById('flashlight-layer');
+      const indicator = document.getElementById('wall-uv-indicator');
+
       if (gameState.flashlightActive) {
-        layer.classList.remove('hidden');
-        addStoryLog("開啟了 UV 紫光燈。");
+        if (layer) layer.classList.remove('hidden');
+        if (indicator) indicator.classList.remove('hidden');
+        addStoryLog("開啟了 UV 紫光手電筒，聚光照亮處浮現隱藏字樣！");
       } else {
-        layer.classList.add('hidden');
-        addStoryLog("關閉了紫光燈。");
+        if (layer) layer.classList.add('hidden');
+        if (indicator) indicator.classList.add('hidden');
+        addStoryLog("關閉了 UV 紫光手電筒。");
       }
     }
 
     /* SCENE 1 PUZZLES */
     function inspectNoticeBoard() {
       playSound('click');
-      addStoryLog("公告欄：『因電力維護，深夜閉館後請使用緊急門禁。夜間緊急分機：<span class='text-amber-300 font-bold'>114</span>』");
+      addStoryLog("公告欄標註：『深夜閉館後請使用門禁系統通行。抽屜解鎖密碼為館內聯絡分機：<span class='text-amber-300 font-bold'>114</span>』");
     }
 
     function inspectDeskWall() {
       playSound('click');
       if (gameState.flashlightActive) {
-        playSound('success');
-        addStoryLog("💡 在 UV 紫光燈照射下，讀書桌前隔板浮現了十字方向密碼：<span class='text-amber-300 font-bold'>↑ ↓ ← →</span>！");
+        addStoryLog("UV 紫光照亮前隔板，浮現螢光暗碼：<span class='text-amber-300 font-bold'>↑ ↓ ← →</span>（此為消防栓鎖密碼）");
       } else {
-        addStoryLog("讀書桌前隔板壁面有些微痕跡，直接看無法看清，需要開啟 UV 紫光手電筒近距離照射觀察。");
+        addStoryLog("這是一面普通的讀書桌正面隔板，好像需要特殊光源照射...（試試開啟 UV 紫光燈？）");
       }
     }
 
     function inspectLaptop() {
       playSound('click');
+      updateClockUI();
       if (gameState.laptopLoggedIn) {
         openModal('modal-laptop-clue');
       } else {
-        const timeObj = getInGameTimeFormatted();
-        document.getElementById('laptop-modal-clock').innerText = timeObj.display;
         openModal('modal-laptop-login');
       }
     }
 
     function submitLaptopLogin() {
-      const acc = document.getElementById('laptop-account-input').value.trim();
-      const pass = document.getElementById('laptop-pass-input').value.trim();
+      const studentId = document.getElementById('laptop-student-id').value.trim();
+      const password = document.getElementById('laptop-password').value.trim();
 
-      const timeObj = getInGameTimeFormatted();
-      const expectedPass = "1956" + timeObj.code; // 1956 + HHMM
+      const requiredPass = "1956" + getFormattedInGameClockDigits();
 
-      if (acc === "112062114" && pass === expectedPass) {
-        playSound('success');
+      if (studentId === "112062114" && password === requiredPass) {
+        playSound('unlock');
         gameState.laptopLoggedIn = true;
         closeModal('modal-laptop-login');
         openModal('modal-laptop-clue');
-        document.getElementById('laptop-status-text').innerText = "已登入";
-        document.getElementById('laptop-status-text').className = "text-[9px] text-emerald-400 font-bold";
-        addStoryLog("🎉 登入成功！顯示特藏區彩虹書脊順序線索：<span class='text-purple-300 font-bold'>藍 ➔ 黃 ➔ 綠 ➔ 紅</span>！");
+        addStoryLog("筆電登入成功！檢索出特藏區書脊順序：<span class='text-amber-300 font-bold'>藍 ➔ 黃 ➔ 綠 ➔ 紅</span>");
       } else {
         playSound('error');
-        addStoryLog(`登入失敗！帳號或密碼不正確。（提示：帳號為學號 112062114，密碼為清大復校年份 1956 + 當前館內時間 ${timeObj.code}）`);
+        addStoryLog(`登入失敗！請確認學號(112062114)與密碼(1956 + 當前館內時間 ${getFormattedInGameClockDigits()})。`);
       }
     }
 
-    function openNotebookModal() {
+    function inspectNotebook() {
       playSound('click');
-      updateNotebookCardUI();
       openModal('modal-notebook-view');
     }
 
-    function updateNotebookCardUI() {
-      const cardSlot = document.getElementById('notebook-card-slot');
-      const cardStatus = document.getElementById('notebook-card-status');
-      const btnTake = document.getElementById('btn-take-id');
-
-      if (gameState.hasStudentId) {
-        if (cardSlot) cardSlot.className = "bg-slate-950/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between opacity-60 pointer-events-none";
-        if (cardStatus) cardStatus.innerText = "已取出學生證";
-        if (btnTake) {
-          btnTake.innerText = "已收進物品欄";
-          btnTake.className = "px-3 py-1.5 bg-slate-800 text-slate-500 rounded text-xs font-bold";
-        }
-      } else {
-        if (cardSlot) cardSlot.className = "bg-purple-950/80 border-2 border-dashed border-purple-500/80 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-purple-900/90 transition-all mb-4";
-        if (cardStatus) cardStatus.innerText = "學號：112062114 (點擊拿取)";
-        if (btnTake) {
-          btnTake.innerText = "點擊拿取學生證";
-          btnTake.className = "px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold shadow";
-        }
-      }
-    }
-
     function takeStudentIdFromNotebook() {
-      if (gameState.hasStudentId) return;
-
+      if (gameState.hasStudentId) {
+        addStoryLog("你已經拿走了筆記本夾層裡的清華學生證。");
+        return;
+      }
       addItem('student_id');
       gameState.hasStudentId = true;
-      updateNotebookCardUI();
-      addStoryLog("你收下了夾層中的<span class='text-purple-300 font-bold'>【清華學生證】</span>（學號：112062114）。");
+      document.getElementById('notebook-card-slot').classList.add('opacity-50');
+      addStoryLog("取得了<span class='text-purple-300 font-bold'>【清華學生證】</span>（學號：112062114）。");
     }
 
-    function inspectNthuHistoryBook() {
+    function openNthuHistoryModal() {
       playSound('click');
       openModal('modal-nthu-history');
     }
 
     function inspectCup() {
       playSound('click');
-      addStoryLog("水木咖啡大杯拿鐵，杯身上寫著顧客備註：『抽屜密碼鎖是分機號碼』。");
+      addStoryLog("水木咖啡拿鐵，杯身貼著備註：『抽屜密碼為館內分機』。");
     }
 
     function inspectDrawer() {
       playSound('click');
       if (gameState.drawerUnlocked) {
-        addStoryLog("抽屜已經打開了，裡面空無一物。");
+        addStoryLog("抽屜已解鎖打開，裡面空空如也。");
       } else {
         openModal('modal-drawer-lock');
       }
@@ -1241,86 +1412,89 @@
 
     function checkDrawerLock() {
       const code = document.getElementById('d1').innerText + document.getElementById('d2').innerText + document.getElementById('d3').innerText;
-
       if (code === "114") {
         playSound('unlock');
         gameState.drawerUnlocked = true;
         closeModal('modal-drawer-lock');
 
-        document.getElementById('drawer-lock-indicator').className = "w-4 h-4 rounded-full bg-emerald-500 border border-emerald-300 flex items-center justify-center";
-        document.getElementById('drawer-lock-indicator').innerHTML = '<i class="fa-solid fa-lock-open text-[8px] text-white"></i>';
+        const ind = document.getElementById('drawer-lock-indicator');
+        if (ind) {
+          ind.className = "w-4 h-4 rounded-full bg-emerald-500 border border-emerald-300 flex items-center justify-center";
+          ind.innerHTML = '<i class="fa-solid fa-lock-open text-[8px] text-white"></i>';
+        }
 
         addItem('uv_flashlight');
-        addStoryLog("咔噠！抽屜順利解鎖了！你在裡面發現了一支<span class='text-amber-300 font-bold'>【UV 紫光手電筒】</span>。");
+        addStoryLog("咔噠！抽屜順利解鎖，獲得<span class='text-amber-300 font-bold'>【UV 紫光手電筒】</span>！");
       } else {
         playSound('error');
-        addStoryLog("密碼錯誤！（提示：注意公告欄與咖啡杯上的分機備註）");
+        addStoryLog("密碼錯誤，抽屜無法開啟。（提示：注意公告欄上的聯絡分機）");
       }
     }
 
     /* SCENE 2 PUZZLES */
     function clickColorBook(color) {
-      if (gameState.bookshelfUnlocked) {
-        addStoryLog("特藏書架機關已經解開了。");
+      if (gameState.colorBooksUnlocked) {
+        addStoryLog("特藏書架機關已解除。");
+        return;
+      }
+      if (!gameState.laptopLoggedIn) {
+        addStoryLog("按下書脊沒有反應...（需要先登入筆電確認正確按壓順序）。");
         return;
       }
 
       playSound('click');
       gameState.colorBookSequence.push(color);
 
-      const seqIndex = gameState.colorBookSequence.length - 1;
-      if (gameState.colorBookSequence[seqIndex] !== gameState.correctColorSequence[seqIndex]) {
+      const idx = gameState.colorBookSequence.length - 1;
+      if (gameState.colorBookSequence[idx] !== gameState.correctColorSequence[idx]) {
         playSound('error');
         gameState.colorBookSequence = [];
-        addStoryLog("按壓順序錯誤，機關已重置！（提示：依筆電提示 藍➔黃➔綠➔紅 按壓）");
+        addStoryLog("按壓順序錯誤，機關已重置！（正確順序需在筆電上確認）");
         return;
       }
 
       if (gameState.colorBookSequence.length === gameState.correctColorSequence.length) {
         playSound('unlock');
-        gameState.bookshelfUnlocked = true;
-        addItem('nthu_map');
-        addStoryLog("咔噠！特藏書架機關解開，獲得了<span class='text-cyan-300 font-bold'>【圖書館館藏地圖】</span>（記載梅園方位順序：東➔南➔西➔北）。");
+        gameState.colorBooksUnlocked = true;
+        addItem('library_map');
+        addStoryLog("咔噠！特藏區連動書架開啟，獲得<span class='text-amber-300 font-bold'>【圖書館館藏地圖】</span>（記載梅園羅盤方位順序）。");
       }
     }
 
     function openCompassModal() {
       playSound('click');
-      if (gameState.compassUnlocked) {
-        addStoryLog("梅園羅盤展示櫃已經開啟。");
-      } else {
-        openModal('modal-compass-cabinet');
-      }
+      openModal('modal-compass-cabinet');
     }
 
-    function pressCompassDir(dir) {
+    function pressCompass(dir) {
+      if (gameState.compassUnlocked) return;
       playSound('click');
-      gameState.compassEnteredSeq.push(dir);
-      document.getElementById('compass-entered-seq').innerText = gameState.compassEnteredSeq.join(' ➔ ');
+      gameState.compassSeq.push(dir);
+      document.getElementById('compass-seq-display').innerText = gameState.compassSeq.join(' ➔ ');
 
-      const idx = gameState.compassEnteredSeq.length - 1;
-      if (gameState.compassEnteredSeq[idx] !== gameState.correctCompassSeq[idx]) {
+      const idx = gameState.compassSeq.length - 1;
+      if (gameState.compassSeq[idx] !== gameState.correctCompassSeq[idx]) {
         playSound('error');
         clearCompassSeq();
-        addStoryLog("方位錯誤！羅盤已重置。（提示：依地圖上的 東➔南➔西➔北 順序點擊）");
+        addStoryLog("羅盤方位輸入錯誤！已被重置。（請參考館藏地圖）");
         return;
       }
 
-      if (gameState.compassEnteredSeq.length === gameState.correctCompassSeq.length) {
+      if (gameState.compassSeq.length === gameState.correctCompassSeq.length) {
         playSound('unlock');
         gameState.compassUnlocked = true;
         closeModal('modal-compass-cabinet');
-        document.getElementById('compass-status-text').innerText = "狀態：已成功解鎖！";
-        document.getElementById('compass-status-text').className = "text-[10px] text-emerald-400 font-bold";
+        document.getElementById('compass-status-text').innerText = "已解鎖取得特刊！";
+        document.getElementById('compass-status-text').className = "text-[10px] text-emerald-400 font-bold text-center";
 
         addItem('meichu_book');
-        addStoryLog("咔噠！梅園羅盤解鎖，獲得了<span class='text-purple-300 font-bold'>《梅竹歷史特刊》</span>！");
+        addStoryLog("轟隆！羅盤展示櫃開啟，獲得<span class='text-amber-300 font-bold'>【《梅竹歷史特刊》】</span>！");
       }
     }
 
     function clearCompassSeq() {
-      gameState.compassEnteredSeq = [];
-      document.getElementById('compass-entered-seq').innerText = "點擊方位按鈕...";
+      gameState.compassSeq = [];
+      document.getElementById('compass-seq-display').innerText = "等待輸入方位...";
     }
 
     /* SCENE 3 PUZZLES */
@@ -1330,106 +1504,120 @@
     }
 
     function scanSelectedBook() {
-      if (gameState.selectedItemId === 'meichu_book' || gameState.inventory.some(i => i.id === 'meichu_book')) {
-        if (gameState.hasGateChip) {
-          addStoryLog("已成功掃描過專刊並取得感應晶片。");
-        } else {
-          playSound('unlock');
-          gameState.hasGateChip = true;
-          closeModal('modal-barcode-scanner');
-          addItem('gate_chip');
-          addStoryLog("嗶！掃描成功，自助設備退出一片<span class='text-emerald-400 font-bold'>【閘門感應晶片】</span>！");
-        }
+      if (gameState.selectedItemId === 'meichu_book') {
+        playSound('unlock');
+        gameState.scannedMeichuBook = true;
+        closeModal('modal-barcode-scanner');
+
+        addItem('gate_chip');
+        addStoryLog("嗶！掃描《梅竹歷史特刊》成功，機台退出一片<span class='text-cyan-300 font-bold'>【閘門感應晶片】</span>！特刊封底標註：1F 密碼為 1911。");
       } else {
         playSound('error');
-        addStoryLog("請先在物品欄選取《梅竹歷史特刊》！");
+        addStoryLog("請先在物品欄選取《梅竹歷史特刊》後再進行掃描！");
       }
     }
 
     function triggerStairwellDoor() {
-      if (gameState.isTrappedInStairwell) {
-        switchScene('stairwell');
+      playSound('click');
+      // 檢查是否持有或已選取備用防火門鑰匙
+      const hasKey = gameState.selectedItemId === 'firedoor_key' || gameState.inventory.some(item => item.id === 'firedoor_key');
+
+      if (gameState.stairwellTrapped) {
+        if (hasKey) {
+          useFiredoorKeyToEscape();
+          return;
+        } else {
+          addStoryLog("<span class='text-red-400 font-bold'>【警告】防火門已被反鎖！你需要【備用防火門鑰匙】才能開啟。（可在此處解鎖 3F 消防栓箱獲得）</span>");
+          openHydrantModal();
+          return;
+        }
+      }
+      
+      // 未受困時點擊：若手上有鑰匙則直接提示，否則跳出警報與進出選擇
+      if (hasKey) {
+        addStoryLog("你身上帶著【備用防火門鑰匙】，隨時可以解開防火門。");
+      }
+      openModal('modal-stairwell-alarm');
+    }
+
+    function useFiredoorKeyToEscape() {
+      const hasKey = gameState.selectedItemId === 'firedoor_key' || gameState.inventory.some(item => item.id === 'firedoor_key');
+      if (hasKey) {
+        playSound('unlock');
+        gameState.stairwellTrapped = false;
+        // 保留鑰匙在物品欄中，不執行 removeItem('firedoor_key')
+        addStoryLog("🔑 你將【備用防火門鑰匙】插入鎖孔解開了防火門，鑰匙已收回口袋！");
+        switchScene('circulation');
       } else {
         playSound('error');
-        startAlarmSiren();
-        openModal('modal-stairwell-alarm');
+        addStoryLog("你身上沒有【備用防火門鑰匙】！請先解開 3F 消防栓箱的十字方向鎖。");
       }
     }
 
     function stairwellChoiceReturn() {
-      stopAlarmSiren();
+      playSound('click');
       closeModal('modal-stairwell-alarm');
-      addStoryLog("警報已解除，你安全返回了圖書館大廳。");
+      addStoryLog("退回圖書館大廳，警報順利解除。");
     }
 
     function stairwellChoiceEnter() {
-      stopAlarmSiren();
-      closeModal('modal-stairwell-alarm');
-      gameState.isTrappedInStairwell = true;
-      playSound('error');
-      addStoryLog("⚠️ 咔噠！你進入了樓梯間，身後的防火門自動反鎖！你受困於 3F 樓梯間。");
-      switchScene('stairwell');
+      // 進入樓梯間前檢查是否有鑰匙
+      const hasKey = gameState.selectedItemId === 'firedoor_key' || gameState.inventory.some(item => item.id === 'firedoor_key');
+      
+      if (hasKey) {
+        playSound('unlock');
+        closeModal('modal-stairwell-alarm');
+        addStoryLog("你使用【備用防火門鑰匙】通過了樓梯間防火門，未被反鎖。");
+        switchScene('stairwell');
+      } else {
+        playSound('error');
+        gameState.stairwellTrapped = true;
+        gameState.visitedStairwell = true;
+        closeModal('modal-stairwell-alarm');
+        addStoryLog("喀嚓！你進入樓梯間，防火門瞬間自動反鎖！你受困於 3F 樓梯間，請尋找消防栓解鎖。");
+        switchScene('stairwell');
+      }
     }
 
-    /* STAIRWELL PUZZLE */
+    /* SCENE 5 PUZZLES */
     function openHydrantModal() {
       playSound('click');
-      if (gameState.hydrantUnlocked) {
-        addStoryLog("消防栓箱已經開啟。");
-      } else {
-        openModal('modal-hydrant-lock');
-      }
+      openModal('modal-hydrant-lock');
     }
 
     function pressHydrantDirection(dir) {
+      if (gameState.hydrantUnlocked) return;
       playSound('click');
-      gameState.hydrantEnteredSeq.push(dir);
-      document.getElementById('hydrant-entered-seq').innerText = gameState.hydrantEnteredSeq.join(' ');
+      gameState.hydrantSeq.push(dir);
+      document.getElementById('hydrant-seq-display').innerText = gameState.hydrantSeq.join(' ');
 
-      const idx = gameState.hydrantEnteredSeq.length - 1;
-      if (gameState.hydrantEnteredSeq[idx] !== gameState.correctHydrantSeq[idx]) {
+      const idx = gameState.hydrantSeq.length - 1;
+      if (gameState.hydrantSeq[idx] !== gameState.correctHydrantSeq[idx]) {
         playSound('error');
         clearHydrantSeq();
-        addStoryLog("方向密碼錯誤！消防栓鎖重置。（提示：開啟紫光燈照射讀書桌前隔板顯影）");
+        addStoryLog("方向暗碼錯誤！消防栓鎖重置。（請用紫光燈照射讀書桌前隔板）");
         return;
       }
 
-      if (gameState.hydrantEnteredSeq.length === gameState.correctHydrantSeq.length) {
+      if (gameState.hydrantSeq.length === gameState.correctHydrantSeq.length) {
         playSound('unlock');
         gameState.hydrantUnlocked = true;
         closeModal('modal-hydrant-lock');
+
         addItem('firedoor_key');
-        addStoryLog("咔噠！消防栓箱打開，獲得了<span class='text-amber-300 font-bold'>【備用防火門鑰匙】</span>！");
+        addStoryLog("咔噠！消防栓箱開啟，獲得<span class='text-amber-300 font-bold'>【備用防火門鑰匙】</span>！可以解開反鎖的防火門了。");
       }
     }
 
     function clearHydrantSeq() {
-      gameState.hydrantEnteredSeq = [];
-      document.getElementById('hydrant-entered-seq').innerText = "點擊方向箭頭...";
+      gameState.hydrantSeq = [];
+      document.getElementById('hydrant-seq-display').innerText = "----";
     }
 
-    function useFiredoorKey() {
-      if (gameState.selectedItemId === 'firedoor_key' || gameState.inventory.some(i => i.id === 'firedoor_key')) {
-        playSound('unlock');
-        gameState.isTrappedInStairwell = false;
-        removeItem('firedoor_key');
-        addStoryLog("🔓 咔嚓！使用備用鑰匙解開了防火門，成功解除受困狀態！");
-        switchScene('circulation');
-      } else {
-        playSound('error');
-        addStoryLog("需要選取【備用防火門鑰匙】才可解鎖。");
-      }
-    }
-
-    /* SCENE 4: KLOTSKI PUZZLE */
-    const GRID_SIZE = 3;
-    const EMPTY_INDEX = 8;
-    let klotskiTiles = [0, 1, 2, 3, 4, 5, 6, 7, 8];
-
+    /* DIRECTOR ROOM PUZZLE (KLOTSKI 3x3 SLIDING) */
     function openDirectorRoomModal() {
       playSound('click');
       openModal('modal-director-circuit');
-      renderKlotskiBoard();
     }
 
     function initKlotskiPuzzle() {
@@ -1437,101 +1625,103 @@
     }
 
     function resetKlotskiPuzzle() {
-      gameState.klotskiSolved = false;
-      klotskiTiles = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+      gameState.klotskiTiles = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+      gameState.klotskiMoves = 0;
+      gameState.circuitSolved = false;
 
+      // 120 random valid moves shuffle algorithm
       for (let i = 0; i < 120; i++) {
-        const emptyPos = klotskiTiles.indexOf(EMPTY_INDEX);
+        const emptyPos = gameState.klotskiTiles.indexOf(8);
         const validMoves = getKlotskiValidMoves(emptyPos);
         const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
-        [klotskiTiles[emptyPos], klotskiTiles[randomMove]] = [klotskiTiles[randomMove], klotskiTiles[emptyPos]];
+        [gameState.klotskiTiles[emptyPos], gameState.klotskiTiles[randomMove]] = [gameState.klotskiTiles[randomMove], gameState.klotskiTiles[emptyPos]];
       }
 
-      const statusEl = document.getElementById('circuit-status-msg');
-      if (statusEl) {
-        statusEl.innerText = "閘門電源狀態：未導通";
-        statusEl.className = "text-xs font-bold text-amber-400 mb-3";
+      const msg = document.getElementById('circuit-status-msg');
+      if (msg) {
+        msg.innerText = "狀態：斷電中";
+        msg.className = "text-red-400 font-bold";
       }
-
       renderKlotskiBoard();
     }
 
     function getKlotskiValidMoves(emptyPos) {
-      const row = Math.floor(emptyPos / GRID_SIZE);
-      const col = emptyPos % GRID_SIZE;
-      const moves = [];
-
-      if (row > 0) moves.push(emptyPos - GRID_SIZE);
-      if (row < GRID_SIZE - 1) moves.push(emptyPos + GRID_SIZE);
-      if (col > 0) moves.push(emptyPos - 1);
-      if (col < GRID_SIZE - 1) moves.push(emptyPos + 1);
-
-      return moves;
+      const row = Math.floor(emptyPos / 3);
+      const col = emptyPos % 3;
+      const valid = [];
+      if (row > 0) valid.push(emptyPos - 3);
+      if (row < 2) valid.push(emptyPos + 3);
+      if (col > 0) valid.push(emptyPos - 1);
+      if (col < 2) valid.push(emptyPos + 1);
+      return valid;
     }
 
     function renderKlotskiBoard() {
-      const boardEl = document.getElementById('klotski-board');
-      if (!boardEl) return;
-      boardEl.innerHTML = '';
+      const board = document.getElementById('klotski-board');
+      if (!board) return;
+      board.innerHTML = '';
 
-      klotskiTiles.forEach((tileValue, currentPos) => {
+      const moveEl = document.getElementById('klotski-moves');
+      if (moveEl) moveEl.innerText = gameState.klotskiMoves;
+
+      gameState.klotskiTiles.forEach((tileVal, currentPos) => {
         const tileEl = document.createElement('div');
-
-        if (tileValue === EMPTY_INDEX && !gameState.klotskiSolved) {
+        if (tileVal === 8 && !gameState.circuitSolved) {
           tileEl.className = 'tile empty';
         } else {
           tileEl.className = 'tile';
-          if (gameState.klotskiSolved && tileValue === EMPTY_INDEX) {
+          if (gameState.circuitSolved && tileVal === 8) {
             tileEl.classList.add('solved-full');
           }
+          const origRow = Math.floor(tileVal / 3);
+          const origCol = tileVal % 3;
+          const posX = (origCol / 2) * 100;
+          const posY = (origRow / 2) * 100;
 
-          const origRow = Math.floor(tileValue / GRID_SIZE);
-          const origCol = tileValue % GRID_SIZE;
-          const posX = (origCol / (GRID_SIZE - 1)) * 100;
-          const posY = (origRow / (GRID_SIZE - 1)) * 100;
-
-          tileEl.style.backgroundSize = `${GRID_SIZE * 100}% ${GRID_SIZE * 100}%`;
+          tileEl.style.backgroundSize = "300% 300%";
           tileEl.style.backgroundPosition = `${posX}% ${posY}%`;
-
-          tileEl.addEventListener('click', () => handleKlotskiTileClick(currentPos));
+          tileEl.onclick = () => handleKlotskiTileClick(currentPos);
         }
-
-        boardEl.appendChild(tileEl);
+        board.appendChild(tileEl);
       });
     }
 
     function handleKlotskiTileClick(clickedPos) {
-      if (gameState.klotskiSolved) return;
-
-      const emptyPos = klotskiTiles.indexOf(EMPTY_INDEX);
+      if (gameState.circuitSolved) return;
+      const emptyPos = gameState.klotskiTiles.indexOf(8);
       const validMoves = getKlotskiValidMoves(emptyPos);
 
       if (validMoves.includes(clickedPos)) {
         playSound('click');
-        [klotskiTiles[emptyPos], klotskiTiles[clickedPos]] = [klotskiTiles[clickedPos], klotskiTiles[emptyPos]];
+        [gameState.klotskiTiles[emptyPos], gameState.klotskiTiles[clickedPos]] = [gameState.klotskiTiles[clickedPos], gameState.klotskiTiles[emptyPos]];
+        gameState.klotskiMoves++;
         renderKlotskiBoard();
         checkKlotskiWin();
       }
     }
 
     function checkKlotskiWin() {
-      const isCorrect = klotskiTiles.every((val, idx) => val === idx);
-      if (isCorrect) {
+      const isWin = gameState.klotskiTiles.every((val, idx) => val === idx);
+      if (isWin) {
         playSound('unlock');
-        gameState.klotskiSolved = true;
+        gameState.circuitSolved = true;
         renderKlotskiBoard();
 
-        const statusEl = document.getElementById('circuit-status-msg');
-        if (statusEl) {
-          statusEl.innerText = "⚡ 電源已成功導通至 1F 正門閘門！";
-          statusEl.className = "text-xs font-bold text-emerald-400 mb-3 animate-pulse";
+        const msg = document.getElementById('circuit-status-msg');
+        if (msg) {
+          msg.innerText = "狀態：電源已導通！";
+          msg.className = "text-emerald-400 font-bold";
         }
-
-        addStoryLog("🎉 成功復原清華校徽！館長控制室已將電源導通至正門管制閘門！");
+        const gatePwr = document.getElementById('gate-power-status');
+        if (gatePwr) {
+          gatePwr.innerText = "閘門電源：已通電";
+          gatePwr.className = "text-xs text-emerald-400 font-mono font-bold";
+        }
+        addStoryLog("⚡ 恭喜！校徽 3x3 拼圖復原完成，正門防盜管制閘門電源成功接通！");
       }
     }
 
-    /* GATE UNLOCK */
+    /* SCENE 4: MAIN GATE UNLOCK */
     function openGateKeypadModal() {
       playSound('click');
       openModal('modal-gate-keypad');
@@ -1552,33 +1742,67 @@
     }
 
     function submitGateUnlock() {
-      if (!gameState.klotskiSolved) {
+      if (!gameState.circuitSolved) {
         playSound('error');
-        addStoryLog("解鎖失敗：正門閘門電源未通電！請至館長控制室導通電源。");
+        addStoryLog("解鎖失敗：閘門電源尚未接通！（需至右上角館長控制室完成校徽拼圖）");
+        return;
+      }
+      if (!gameState.inventory.some(item => item.id === 'gate_chip')) {
+        playSound('error');
+        addStoryLog("解鎖失敗：尚未裝載閘門感應晶片！（需至 1F 服務櫃檯掃描《梅竹歷史特刊》）");
         return;
       }
 
-      if (!gameState.hasGateChip) {
-        playSound('error');
-        addStoryLog("解鎖失敗：未裝載【閘門感應晶片】！請使用自助機掃描《梅竹歷史特刊》。");
-        return;
-      }
-
-      if (gameState.gatePinEntered === "1956") {
+      if (gameState.gatePinEntered === "1911") {
         playSound('unlock');
         closeModal('modal-gate-keypad');
         clearInterval(gameState.timerInterval);
 
+        const mins = Math.floor(gameState.timerSeconds / 60).toString().padStart(2, '0');
+        const secs = (gameState.timerSeconds % 60).toString().padStart(2, '0');
+        const timeStr = `${mins}:${secs}`;
+        document.getElementById('victory-time').innerText = timeStr;
+
+        // 計算獲得的稱號
+        let earnedTitle = "";
+        if (gameState.visitedStairwell && gameState.hydrantUnlocked) {
+          earnedTitle = "旺宏館滅火員 🚒";
+        } else if (gameState.timerSeconds < 120) {
+          earnedTitle = "旺宏館解謎學霸 🎓";
+        } else {
+          earnedTitle = "旺宏館解謎見習生 📚";
+        }
+
+        gameState.earnedTitle = earnedTitle;
+        const titleEl = document.querySelector('#modal-victory .text-emerald-300.font-bold');
+        if (titleEl) titleEl.innerText = earnedTitle;
+
+        if (window.loadLeaderboard) window.loadLeaderboard();
         openModal('modal-victory');
-        addStoryLog("🎉 叮咚！旺宏館自動玻璃大門順利解鎖開啟！你成功逃脫了！");
+        addStoryLog(`🎉 叮咚！旺宏館自動玻璃門解鎖開啟！成功逃出清華旺宏館！榮獲稱號【${earnedTitle}】！`);
       } else {
         playSound('error');
-        addStoryLog("PIN 碼錯誤！（提示：清大在台復校年份為 1956）");
+        addStoryLog("PIN 碼錯誤！防盜閘門無法開啟。（提示：請查看特刊封底標註 PIN 碼）");
         clearGatePin();
       }
     }
 
-    /* GENERAL MODAL HELPERS */
+    function submitLeaderboardEntry() {
+      const nameInput = document.getElementById('player-name-input');
+      const name = nameInput ? nameInput.value.trim() : "";
+      const mins = Math.floor(gameState.timerSeconds / 60).toString().padStart(2, '0');
+      const secs = (gameState.timerSeconds % 60).toString().padStart(2, '0');
+      const timeStr = `${mins}:${secs}`;
+
+      if (window.saveLeaderboardRecord) {
+        window.saveLeaderboardRecord(name || "清華學霸", timeStr, gameState.timerSeconds, gameState.earnedTitle || "旺宏館解謎學霸 🎓");
+        if (document.getElementById('leaderboard-submit-area')) {
+          document.getElementById('leaderboard-submit-area').innerHTML = `<p class="text-xs text-emerald-400 font-bold">✓ 紀錄已成功提交至全球英雄榜！</p>`;
+        }
+      }
+    }
+
+    /* MODAL HELPERS */
     function openModal(id) {
       const el = document.getElementById(id);
       if (el) el.classList.remove('hidden');
